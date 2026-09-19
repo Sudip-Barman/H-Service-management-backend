@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.staff import Staff
 from app.models.user import User
-from app.schemas.staff import StaffCreate, StaffResponse
+from app.schemas.staff import StaffCreate, StaffResponse, StaffUpdate
 from app.core.dependencies import require_role, require_admin
 
 
@@ -19,15 +19,7 @@ router = APIRouter(
     response_model=list[StaffResponse]
 )
 def get_staff(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_role(
-            "admin",
-            "receptionist",
-            "doctor",
-            "nurse"
-        )
-    )
+    db: Session = Depends(get_db)
 ):
     staff = (
         db.query(Staff)
@@ -44,15 +36,7 @@ def get_staff(
 )
 def get_staff_member(
     staff_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_role(
-            "admin",
-            "receptionist",
-            "doctor",
-            "nurse"
-        )
-    )
+    db: Session = Depends(get_db)
 ):
     staff = (
         db.query(Staff)
@@ -76,18 +60,12 @@ def get_staff_member(
 )
 def create_staff(
     staff_data: StaffCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_role(
-            "admin",
-            "receptionist"
-        )
-    )
+    db: Session = Depends(get_db)
 ):
     new_staff = Staff(
         name=staff_data.name,
         role=staff_data.role,
-        gender=staff_data.gender,
+        gender=staff_data.gender or "Male",
         date_of_birth=staff_data.date_of_birth,
         phone=staff_data.phone,
         email=staff_data.email,
@@ -111,14 +89,8 @@ def create_staff(
 )
 def update_staff(
     staff_id: int,
-    staff_data: StaffCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_role(
-            "admin",
-            "receptionist"
-        )
-    )
+    staff_data: StaffUpdate,
+    db: Session = Depends(get_db)
 ):
     staff = (
         db.query(Staff)
@@ -132,17 +104,8 @@ def update_staff(
             detail="Staff member not found"
         )
 
-    staff.name = staff_data.name
-    staff.role = staff_data.role
-    staff.gender = staff_data.gender
-    staff.date_of_birth = staff_data.date_of_birth
-    staff.phone = staff_data.phone
-    staff.email = staff_data.email
-    staff.address = staff_data.address
-    staff.qualification = staff_data.qualification
-    staff.experience = staff_data.experience
-    staff.joining_date = staff_data.joining_date
-    staff.status = staff_data.status
+    for field, value in staff_data.model_dump(exclude_unset=True).items():
+        setattr(staff, field, value)
 
     db.commit()
     db.refresh(staff)
@@ -155,8 +118,7 @@ def update_staff(
 )
 def delete_staff(
     staff_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
+    db: Session = Depends(get_db)
 ):
     staff = (
         db.query(Staff)

@@ -10,12 +10,35 @@ class BookingBase(BaseModel):
         max_length=50,
     )
 
-    patient_id: int
-    doctor_id: int
+    patient_id: int | None = None
+    doctor_id: int | None = None
     service_id: int | None = None
 
     booking_date: date
-    booking_time: time
+    booking_time: time | None = None
+
+    booking_category: str | None = "Checkup / Consultation"
+    patient_type: str | None = None
+    patient_name: str | None = None
+    patient_phone: str | None = None
+    patient_email: str | None = None
+    patient_address: str | None = None
+
+    assigned_staff_id: int | None = None
+    service_duration: Decimal | float | None = None
+    service_duration_unit: str | None = None
+    service_start_date: date | None = None
+    service_end_date: date | None = None
+    service_rate: Decimal | float | None = None
+    service_pricing_type: str | None = None
+    total_fee: Decimal | float | None = None
+
+    service_location_type: str | None = None
+    service_address: str | None = None
+    service_area: str | None = None
+    service_city: str | None = None
+    service_pincode: str | None = None
+    service_landmark: str | None = None
 
     booking_type: str = Field(
         default="In-Person",
@@ -52,11 +75,7 @@ class BookingCreate(BookingBase):
 
 
 class BookingUpdate(BaseModel):
-    booking_number: str | None = Field(
-        default=None,
-        max_length=50,
-    )
-
+    booking_number: str | None = None
     patient_id: int | None = None
     doctor_id: int | None = None
     service_id: int | None = None
@@ -64,31 +83,34 @@ class BookingUpdate(BaseModel):
     booking_date: date | None = None
     booking_time: time | None = None
 
-    booking_type: str | None = Field(
-        default=None,
-        max_length=30,
-    )
+    booking_category: str | None = None
+    patient_type: str | None = None
+    patient_name: str | None = None
+    patient_phone: str | None = None
+    patient_email: str | None = None
+    patient_address: str | None = None
 
-    priority: str | None = Field(
-        default=None,
-        max_length=20,
-    )
+    assigned_staff_id: int | None = None
+    service_duration: Decimal | float | None = None
+    service_duration_unit: str | None = None
+    service_start_date: date | None = None
+    service_end_date: date | None = None
+    service_rate: Decimal | float | None = None
+    service_pricing_type: str | None = None
+    total_fee: Decimal | float | None = None
 
-    status: str | None = Field(
-        default=None,
-        max_length=30,
-    )
+    service_location_type: str | None = None
+    service_address: str | None = None
+    service_area: str | None = None
+    service_city: str | None = None
+    service_pincode: str | None = None
+    service_landmark: str | None = None
 
-    consultation_fee: Decimal | None = Field(
-        default=None,
-        ge=0,
-    )
-
-    payment_status: str | None = Field(
-        default=None,
-        max_length=20,
-    )
-
+    booking_type: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    consultation_fee: Decimal | None = None
+    payment_status: str | None = None
     reason: str | None = None
     notes: str | None = None
 

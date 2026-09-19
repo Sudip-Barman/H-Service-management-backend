@@ -1,9 +1,14 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.admission import Admission
+from app.models.booking import Booking
 from app.models.patient import Patient
+from app.models.room_bed import Bed, Room
 from app.schemas.patient import (
     PatientCreate,
     PatientResponse,
@@ -12,9 +17,10 @@ from app.schemas.patient import (
 
 
 router = APIRouter(
-    prefix="/patients",
+    prefix="/api/patients",
     tags=["Patients"]
 )
+
 
 
 # =========================================================
@@ -72,6 +78,142 @@ def generate_registration_number(db: Session) -> str:
 
 
 # =========================================================
+# ENRICH PATIENT HELPER
+# =========================================================
+
+def _enrich_patient(patient: Patient, db: Session) -> dict:
+    """
+    Enrich patient model with actual data from admissions and bookings tables.
+    """
+    # 1. Admission lookup
+    admission = (
+        db.query(Admission)
+        .filter(Admission.patient_id == patient.id)
+        .order_by(Admission.id.desc())
+        .first()
+    )
+
+    admission_status = "Not Admitted"
+    room_bed = "Not Assigned"
+    room_number = None
+    bed_number = None
+    ward = None
+
+    if admission:
+        admission_status = admission.status or "Admitted"
+        if admission_status == "Admitted" and admission.room_bed_id:
+            bed = db.query(Bed).filter(Bed.id == admission.room_bed_id).first()
+            if bed:
+                bed_number = bed.bed_number
+                if bed.room_id:
+                    room = db.query(Room).filter(Room.id == bed.room_id).first()
+                    if room:
+                        room_number = room.room_number
+                        ward = room.ward
+                        if ward and room_number:
+                            room_bed = f"{ward} - Room {room_number} / {bed_number}"
+                        elif room_number:
+                            room_bed = f"Room {room_number} / {bed_number}"
+                        else:
+                            room_bed = str(bed_number)
+                else:
+                    room_bed = str(bed_number)
+        else:
+            room_bed = "Not Assigned"
+
+    # 2. Bookings lookup (activity)
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.patient_id == patient.id)
+        .all()
+    )
+
+    service_bookings = [
+        b for b in bookings
+        if b.service_id is not None
+        or (b.booking_category and "service" in b.booking_category.lower())
+    ]
+    appointment_bookings = [
+        b for b in bookings
+        if b.doctor_id is not None
+        or (b.booking_category and any(w in b.booking_category.lower() for w in ["consultation", "checkup", "doctor", "appointment"]))
+    ]
+
+    # 3. Patient saved services
+    saved_services = []
+    if patient.services:
+        try:
+            parsed = json.loads(patient.services)
+            if isinstance(parsed, list):
+                saved_services = parsed
+            else:
+                saved_services = [parsed]
+        except Exception:
+            saved_services = [s.strip() for s in patient.services.split(",") if s.strip()]
+
+    all_service_keys = set()
+    for s in saved_services:
+        all_service_keys.add(str(s))
+    for b in service_bookings:
+        if b.service_id:
+            all_service_keys.add(f"srv-{b.service_id}")
+        else:
+            all_service_keys.add(f"bk-{b.booking_id}")
+
+    service_count = len(all_service_keys)
+    appointment_count = len(appointment_bookings)
+
+    # 4. Status determination
+    effective_status = patient.status or "Active"
+    if admission and admission.status == "Admitted":
+        effective_status = "Admitted"
+    elif effective_status == "Admitted" and (not admission or admission.status != "Admitted"):
+        effective_status = "Discharged" if (admission and admission.status == "Discharged") else "Active"
+    elif effective_status in ("Active", "Registered") and (service_bookings or appointment_bookings):
+        has_active_booking = any(b.status in ("Scheduled", "Confirmed", "In Progress") for b in bookings)
+        if has_active_booking:
+            effective_status = "Under Treatment"
+
+    return {
+        "id": patient.id,
+        "registration_number": patient.registration_number,
+        "registration_date": patient.registration_date,
+        "status": effective_status,
+        "first_name": patient.first_name,
+        "middle_name": patient.middle_name,
+        "last_name": patient.last_name,
+        "date_of_birth": patient.date_of_birth,
+        "age": patient.age,
+        "gender": patient.gender,
+        "blood_group": patient.blood_group,
+        "occupation": patient.occupation,
+        "marital_status": patient.marital_status,
+        "nationality": patient.nationality,
+        "phone": patient.phone,
+        "email": patient.email,
+        "address": patient.address,
+        "city": patient.city,
+        "state": patient.state,
+        "postal_code": patient.postal_code,
+        "emergency_contact_name": patient.emergency_contact_name,
+        "emergency_contact_phone": patient.emergency_contact_phone,
+        "emergency_contact_relation": patient.emergency_contact_relation,
+        "patient_problem": patient.patient_problem,
+        "services": saved_services,
+        "admission_status": admission_status,
+        "room_bed": room_bed,
+        "room_number": room_number,
+        "bed_number": bed_number,
+        "ward": ward,
+        "service_count": service_count,
+        "appointment_count": appointment_count,
+        "digital_signature": patient.digital_signature,
+        "created_at": patient.created_at,
+        "updated_at": patient.updated_at,
+    }
+
+
+# =========================================================
 # CREATE PATIENT
 # =========================================================
 
@@ -89,6 +231,10 @@ def create_patient(
 
     Registration number is automatically generated.
     """
+
+    services_val = patient_data.services
+    if isinstance(services_val, (list, dict)):
+        services_val = json.dumps(services_val)
 
     # Try a few times in case two users register
     # simultaneously and generate the same number.
@@ -143,6 +289,8 @@ def create_patient(
 
             patient_problem=patient_data.patient_problem,
 
+            services=services_val,
+
             digital_signature=patient_data.digital_signature,
         )
 
@@ -151,7 +299,7 @@ def create_patient(
             db.commit()
             db.refresh(patient)
 
-            return patient
+            return _enrich_patient(patient, db)
 
         except IntegrityError:
 
@@ -182,14 +330,16 @@ def get_patients(
     db: Session = Depends(get_db)
 ):
     """
-    Return all patients.
+    Return all patients with enriched admission and activity data.
     """
 
-    return (
+    patients = (
         db.query(Patient)
         .order_by(Patient.id.desc())
         .all()
     )
+
+    return [_enrich_patient(p, db) for p in patients]
 
 
 # =========================================================
@@ -205,7 +355,7 @@ def get_patient(
     db: Session = Depends(get_db)
 ):
     """
-    Return one patient by database ID.
+    Return one patient by database ID with enriched admission and activity data.
     """
 
     patient = (
@@ -220,7 +370,7 @@ def get_patient(
             detail="Patient not found."
         )
 
-    return patient
+    return _enrich_patient(patient, db)
 
 
 # =========================================================
@@ -258,6 +408,9 @@ def update_patient(
         exclude_unset=True
     )
 
+    if "services" in update_data and isinstance(update_data["services"], (list, dict)):
+        update_data["services"] = json.dumps(update_data["services"])
+
     for field, value in update_data.items():
         setattr(patient, field, value)
 
@@ -273,7 +426,7 @@ def update_patient(
             detail="Unable to update patient."
         )
 
-    return patient
+    return _enrich_patient(patient, db)
 
 
 # =========================================================
@@ -311,3 +464,25 @@ def delete_patient(
     db.commit()
 
     return None
+
+
+# =========================================================
+# ROUTE ALIASES & LEGACY PREFIX COMPATIBILITY
+# =========================================================
+
+# Ensure both /api/patients and /api/patients/ work without redirects
+router.add_api_route("", get_patients, methods=["GET"], response_model=list[PatientResponse], include_in_schema=False)
+router.add_api_route("", create_patient, methods=["POST"], response_model=PatientResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+
+# Legacy /patients router so requests without /api prefix also succeed
+legacy_router = APIRouter(
+    prefix="/patients",
+    tags=["Patients (Legacy)"]
+)
+legacy_router.add_api_route("/", get_patients, methods=["GET"], response_model=list[PatientResponse], include_in_schema=False)
+legacy_router.add_api_route("", get_patients, methods=["GET"], response_model=list[PatientResponse], include_in_schema=False)
+legacy_router.add_api_route("/", create_patient, methods=["POST"], response_model=PatientResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+legacy_router.add_api_route("", create_patient, methods=["POST"], response_model=PatientResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+legacy_router.add_api_route("/{patient_id}", get_patient, methods=["GET"], response_model=PatientResponse, include_in_schema=False)
+legacy_router.add_api_route("/{patient_id}", update_patient, methods=["PUT"], response_model=PatientResponse, include_in_schema=False)
+legacy_router.add_api_route("/{patient_id}", delete_patient, methods=["DELETE"], status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)

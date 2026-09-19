@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -119,6 +120,8 @@ class PatientCreate(BaseModel):
         min_length=1
     )
 
+    services: Any = None
+
     digital_signature: str | None = None
 
 
@@ -237,6 +240,8 @@ class PatientUpdate(BaseModel):
 
     patient_problem: str | None = None
 
+    services: Any = None
+
     digital_signature: str | None = None
 
 
@@ -300,6 +305,22 @@ class PatientResponse(BaseModel):
     emergency_contact_relation: str | None
 
     patient_problem: str
+
+    services: Any = None
+
+    admission_status: str | None = None
+
+    room_bed: str | None = None
+
+    room_number: str | None = None
+
+    bed_number: str | None = None
+
+    ward: str | None = None
+
+    service_count: int | None = 0
+
+    appointment_count: int | None = 0
 
     digital_signature: str | None
 

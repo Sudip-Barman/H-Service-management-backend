@@ -22,15 +22,15 @@ class Booking(Base):
         index=True,
     )
 
-    patient_id: Mapped[int] = mapped_column(
+    patient_id: Mapped[int | None] = mapped_column(
         Integer,
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
-    doctor_id: Mapped[int] = mapped_column(
+    doctor_id: Mapped[int | None] = mapped_column(
         Integer,
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -46,9 +46,110 @@ class Booking(Base):
         index=True,
     )
 
-    booking_time: Mapped[time] = mapped_column(
+    booking_time: Mapped[time | None] = mapped_column(
         Time,
-        nullable=False,
+        nullable=True,
+    )
+
+    booking_category: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        default="Checkup / Consultation",
+    )
+
+    patient_type: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    patient_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    patient_phone: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    patient_email: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+
+    patient_address: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    assigned_staff_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    service_duration: Mapped[float | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+    )
+
+    service_duration_unit: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    service_start_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    service_end_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    service_rate: Mapped[float | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+    )
+
+    service_pricing_type: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    total_fee: Mapped[float | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+    )
+
+    service_location_type: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    service_address: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    service_area: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    service_city: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    service_pincode: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
+    service_landmark: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
     )
 
     booking_type: Mapped[str] = mapped_column(

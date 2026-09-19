@@ -113,3 +113,41 @@ def get_me(
     current_user: User = Depends(get_current_user)
 ):
     return current_user
+
+
+from pydantic import BaseModel
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    email: str | None = None
+
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    db: Session = Depends(get_db)
+):
+    user = None
+    if data.email:
+        user = db.query(User).filter(User.email == data.email).first()
+    
+    if not user:
+        # Fallback to any active user if email not given
+        user = db.query(User).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+
+    user.password_hash = hash_password(data.new_password)
+    db.commit()
+    return {"message": "Password changed successfully"}

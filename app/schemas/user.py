@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    role: str | None = None
 
 
 class UserResponse(BaseModel):

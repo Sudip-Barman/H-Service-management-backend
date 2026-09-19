@@ -243,22 +243,10 @@ def create_booking(
             db
         )
 
-    booking = Booking(
-        booking_number=booking_number,
-        patient_id=data.patient_id,
-        doctor_id=data.doctor_id,
-        service_id=data.service_id,
-        booking_date=data.booking_date,
-        booking_time=data.booking_time,
-        booking_type=data.booking_type,
-        priority=data.priority,
-        status=data.status,
-        consultation_fee=data.consultation_fee,
-        payment_status=data.payment_status,
-        reason=data.reason,
-        notes=data.notes,
-        created_by=data.created_by,
-    )
+    booking_dict = data.model_dump()
+    booking_dict["booking_number"] = booking_number
+
+    booking = Booking(**booking_dict)
 
     db.add(booking)
     db.commit()

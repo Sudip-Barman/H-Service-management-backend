@@ -159,6 +159,11 @@ class Patient(Base):
         nullable=False,
     )
 
+    services: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     # ------------------------------------------------------------------
     # Digital Signature
     # ------------------------------------------------------------------

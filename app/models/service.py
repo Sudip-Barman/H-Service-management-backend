@@ -35,7 +35,22 @@ class Service(Base):
         nullable=False,
         default=0
     )
-
+    staff_required: Mapped[int] = mapped_column(
+        nullable=False,
+        default=1
+    )
+    available_staff: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0
+    )
+    bookings: Mapped[int] = mapped_column(
+        nullable=False,
+        default=0
+    )
+    rating: Mapped[float] = mapped_column(
+        nullable=False,
+        default=0
+    )
     duration: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True
