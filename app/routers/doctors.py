@@ -61,13 +61,13 @@ def save_doctor_photo(file: UploadFile) -> str:
 
     if not file:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Photo file is required.",
         )
 
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Only JPG, PNG and WEBP images are allowed.",
         )
 
@@ -75,19 +75,19 @@ def save_doctor_photo(file: UploadFile) -> str:
         file_data = file.file.read()
     except Exception:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Unable to read uploaded photo.",
         )
 
     if not file_data:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Uploaded photo is empty.",
         )
 
     if len(file_data) > MAX_FILE_SIZE:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Doctor photo must be less than 5 MB.",
         )
 
@@ -137,7 +137,7 @@ def save_doctor_photo(file: UploadFile) -> str:
 
     except Exception:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Invalid or corrupted image file.",
         )
 
@@ -209,7 +209,7 @@ def get_doctor(
 
     if not doctor:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Doctor not found",
         )
 
