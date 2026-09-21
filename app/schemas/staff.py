@@ -15,6 +15,8 @@ class StaffCreate(BaseModel):
     experience: str | None = None
     joining_date: date | None = None
     status: str = "Active"
+    username: str | None = None
+    temporary_password: str | None = None
 
     @field_validator("date_of_birth", "joining_date", mode="before")
     @classmethod
@@ -36,6 +38,8 @@ class StaffUpdate(BaseModel):
     experience: str | None = None
     joining_date: date | None = None
     status: str | None = None
+    username: str | None = None
+    temporary_password: str | None = None
 
     @field_validator("date_of_birth", "joining_date", mode="before")
     @classmethod
@@ -58,6 +62,8 @@ class StaffResponse(BaseModel):
     experience: str | None
     joining_date: date | None
     status: str
+    user_id: int | None = None
+    temporary_password: str | None = None
 
     model_config = ConfigDict(
         from_attributes=True

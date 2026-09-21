@@ -15,6 +15,9 @@ router = APIRouter(
 )
 
 
+from app.services.notification_service import sync_followup_reminders
+
+
 def _format_notification(n: Notification) -> dict:
     return {
         "id": n.id,
@@ -32,6 +35,12 @@ def _format_notification(n: Notification) -> dict:
 
 @router.get("")
 def get_notifications(db: Session = Depends(get_db)):
+    try:
+        sync_followup_reminders(db)
+    except Exception as e:
+        # Prevent any potential follow-up sync issue from breaking notification retrieval
+        pass
+
     notifications = db.query(Notification).order_by(Notification.id.desc()).all()
     return [_format_notification(n) for n in notifications]
 

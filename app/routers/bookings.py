@@ -210,6 +210,10 @@ def get_booking(
     return booking
 
 
+from app.services.billing_service import generate_bill_for_booking
+from app.services.notification_service import create_system_notification
+
+
 @router.post(
     "",
     response_model=BookingResponse,
@@ -249,6 +253,26 @@ def create_booking(
     booking = Booking(**booking_dict)
 
     db.add(booking)
+
+    # Automated Notification Trigger
+    p_name = booking.patient_name or "Patient"
+    p_priority = "Urgent" if booking.priority in ["Urgent", "Emergency"] else ("High" if booking.priority == "High" else "Normal")
+    create_system_notification(
+        db=db,
+        title=f"New Booking: {p_name}",
+        message=f"Booking {booking.booking_number} received for {p_name} ({booking.booking_category or 'Appointment'}). Date: {booking.booking_date or 'TBD'}, Time: {booking.booking_time or 'TBD'}.",
+        notif_type="Bookings",
+        priority=p_priority,
+        department="Reception",
+        recipient="Reception & Medical Staff",
+    )
+
+    # Automated Billing Generation
+    try:
+        generate_bill_for_booking(booking, db)
+    except Exception as bill_err:
+        print(f"Failed to auto-generate booking bill: {bill_err}")
+
     db.commit()
     db.refresh(booking)
 
@@ -315,6 +339,12 @@ def update_booking(
         )
 
     booking.updated_at = datetime.utcnow()
+
+    # Automated Billing Sync
+    try:
+        generate_bill_for_booking(booking, db)
+    except Exception as bill_err:
+        print(f"Failed to update booking bill: {bill_err}")
 
     db.commit()
     db.refresh(booking)

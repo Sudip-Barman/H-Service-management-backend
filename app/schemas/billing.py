@@ -24,6 +24,8 @@ class BillCreate(BaseModel):
     payment_status: str = "Pending"
     payment_method: str | None = "Cash"
     items_json: str | None = None
+    source: str = "booking"
+    booking_id: int | None = None
 
 
 class BillUpdate(BaseModel):
@@ -43,6 +45,8 @@ class BillUpdate(BaseModel):
     payment_status: str | None = None
     payment_method: str | None = None
     items_json: str | None = None
+    source: str | None = None
+    booking_id: int | None = None
 
 
 class BillResponse(BaseModel):
@@ -68,5 +72,52 @@ class BillResponse(BaseModel):
     payment_status: str
     payment_method: str | None
     items_json: str | None
+    source: str | None = "booking"
+    booking_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MedicineItemInput(BaseModel):
+    medicine_id: int | None = None
+    medicine_name: str
+    quantity: int = 1
+    price: float = 0.0
+
+
+class RoomChargeInput(BaseModel):
+    room_id: int | None = None
+    room_number: str | None = None
+    ward: str | None = None
+    room_type: str | None = None
+    days: int = 1
+    price_per_day: float = 0.0
+    total: float = 0.0
+
+
+class AppointmentChargeInput(BaseModel):
+    doctor_id: int | None = None
+    doctor_name: str | None = None
+    date: str | None = None
+    charge: float = 0.0
+
+
+class OtherChargeInput(BaseModel):
+    description: str | None = None
+    amount: float = 0.0
+
+
+class ManualBillCreate(BaseModel):
+    patient_id: str | int
+    service_id: int
+    duration: str | None = "1 Day"
+    medicines: list[MedicineItemInput] | None = []
+    room_charge: RoomChargeInput | None = None
+    appointment: AppointmentChargeInput | None = None
+    other_charges: OtherChargeInput | None = None
+    discount: float = 0.0
+    payment_status: str = "Unpaid"
+    paid_amount: float = 0.0
+    payment_method: str | None = "Cash"
+    tax_rate: float = 5.0
+

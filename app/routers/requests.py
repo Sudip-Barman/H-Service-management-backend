@@ -40,6 +40,9 @@ def get_requests(db: Session = Depends(get_db)):
     return [_format_request(r) for r in requests]
 
 
+from app.services.notification_service import create_system_notification
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_request(data: RequestCreate, db: Session = Depends(get_db)):
     req_for = data.requested_for
@@ -66,6 +69,20 @@ def create_request(data: RequestCreate, db: Session = Depends(get_db)):
         description=data.description,
     )
     db.add(req)
+
+    # Automated Notification Trigger
+    p_level = "Urgent" if req.priority in ["Urgent", "Emergency"] else ("High" if req.priority == "High" else "Normal")
+    code_display = req.request_code or f"Request for {req.item}"
+    create_system_notification(
+        db=db,
+        title=f"New Request: {req.request_type} - {req.item}",
+        message=f"Request {code_display} for '{req.item}' submitted by {req.requested_by or 'Staff'}. Priority: {req.priority}.",
+        notif_type="Requests",
+        priority=p_level,
+        department=req.department or "Hospital Operations",
+        recipient="Administration & Procurement",
+    )
+
     db.commit()
     db.refresh(req)
     return _format_request(req)

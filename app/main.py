@@ -30,6 +30,7 @@ from app.routers.notifications import router as notifications_router
 from app.routers.feedback import router as feedback_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.settings import router as settings_router
+from app.routers.assets import router as assets_router
 from app.seed_data import seed
 
 Base.metadata.create_all(bind=engine)
@@ -97,6 +98,7 @@ app.include_router(notifications_router)
 app.include_router(feedback_router)
 app.include_router(dashboard_router)
 app.include_router(settings_router)
+app.include_router(assets_router)
 
 
 @app.get("/")

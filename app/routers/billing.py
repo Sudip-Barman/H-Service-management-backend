@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.billing import Bill
-from app.schemas.billing import BillCreate, BillResponse, BillUpdate
+from app.models.booking import Booking
+from app.schemas.billing import BillCreate, BillResponse, BillUpdate, ManualBillCreate
+from app.services.billing_service import create_manual_bill, sync_bills_from_patients_and_bookings
 
 router = APIRouter(
     prefix="/api/billing",
@@ -27,6 +29,15 @@ def _format_bill(b: Bill) -> dict:
     paid_amount = float(b.paid_amount)
     balance = max(0.0, total_amount - paid_amount)
 
+    # Resolve service name and ID from items or description
+    service_name = b.description or "General Service"
+    service_id = None
+    if items and isinstance(items, list) and len(items) > 0:
+        first_item = items[0]
+        if isinstance(first_item, dict):
+            service_name = first_item.get("service_name") or first_item.get("category") or service_name
+            service_id = first_item.get("service_id")
+
     return {
         "id": b.invoice_number,
         "bill_id": b.id,
@@ -38,10 +49,11 @@ def _format_bill(b: Bill) -> dict:
         "patientPhone": b.patient_phone or "",
         "patientEmail": b.patient_email or "",
         "address": b.address or "",
-        "type": b.bill_type,
-        "description": b.description or "Hospital Service",
-        "doctor": b.doctor or "Hospital Medical Team",
-        "department": b.department or "General Medicine",
+        "type": b.bill_type or "Service",
+        "serviceName": service_name,
+        "serviceId": service_id,
+        "description": b.description or service_name,
+        "department": "HomeCare",
         "visitDate": str(b.date),
         "date": str(b.date),
         "subtotal": subtotal,
@@ -52,16 +64,23 @@ def _format_bill(b: Bill) -> dict:
         "paidAmount": paid_amount,
         "paid_amount": paid_amount,
         "balance": balance,
-        "status": b.payment_status,
-        "payment_status": b.payment_status,
+        "status": "Paid" if (balance <= 0.01 and total_amount > 0 and paid_amount > 0) else "Due",
+        "payment_status": "Paid" if (balance <= 0.01 and total_amount > 0 and paid_amount > 0) else "Due",
         "paymentMethod": b.payment_method or "Cash",
         "payment_method": b.payment_method or "Cash",
+        "source": getattr(b, "source", None) or "booking",
+        "booking_id": getattr(b, "booking_id", None),
+        "bookingId": getattr(b, "booking_id", None),
         "items": items,
     }
 
 
 @router.get("")
 def get_bills(db: Session = Depends(get_db)):
+    try:
+        sync_bills_from_patients_and_bookings(db)
+    except Exception as e:
+        print(f"Error syncing bills: {e}")
     bills = db.query(Bill).order_by(Bill.id.desc()).all()
     return [_format_bill(b) for b in bills]
 
@@ -76,6 +95,12 @@ def get_bill(invoice_number: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found"
         )
+    return _format_bill(bill)
+
+
+@router.post("/manual", status_code=status.HTTP_201_CREATED)
+def create_manual_bill_endpoint(data: ManualBillCreate, db: Session = Depends(get_db)):
+    bill = create_manual_bill(data, db)
     return _format_bill(bill)
 
 
@@ -95,6 +120,7 @@ def create_bill(data: BillCreate, db: Session = Depends(get_db)):
     return _format_bill(bill)
 
 
+
 @router.put("/{bill_id}")
 def update_bill(bill_id: str, data: BillUpdate, db: Session = Depends(get_db)):
     bill = db.query(Bill).filter(
@@ -112,14 +138,28 @@ def update_bill(bill_id: str, data: BillUpdate, db: Session = Depends(get_db)):
     # Re-evaluate payment status
     total = float(bill.total_amount)
     paid = float(bill.paid_amount)
-    if paid >= total and total > 0:
+    if total > 0 and paid >= (total - 0.01):
         bill.payment_status = "Paid"
     elif paid > 0:
-        bill.payment_status = "Partial"
+        bill.payment_status = "Due"  # partial
     else:
-        bill.payment_status = "Pending"
+        bill.payment_status = "Due"
 
     db.commit()
+
+    # Sync booking payment_status if this bill is linked to a booking
+    booking_id = getattr(bill, "booking_id", None)
+    if booking_id:
+        booking = db.query(Booking).filter(Booking.booking_id == booking_id).first()
+        if booking:
+            if total > 0 and paid >= (total - 0.01):
+                booking.payment_status = "Paid"
+            elif paid > 0:
+                booking.payment_status = "Partial"
+            else:
+                booking.payment_status = "Pending"
+            db.commit()
+
     db.refresh(bill)
     return _format_bill(bill)
 

@@ -14,6 +14,8 @@ from app.schemas.patient import (
     PatientResponse,
     PatientUpdate,
 )
+from app.services.billing_service import generate_bill_for_patient
+from app.services.notification_service import create_system_notification
 
 
 router = APIRouter(
@@ -296,6 +298,25 @@ def create_patient(
 
         try:
             db.add(patient)
+
+            # Automated Notification Trigger
+            patient_full_name = f"{patient.first_name} {patient.last_name or ''}".strip()
+            create_system_notification(
+                db=db,
+                title=f"New Patient Registered: {patient_full_name}",
+                message=f"Patient {patient_full_name} ({patient.registration_number}) has been registered in the system.",
+                notif_type="Patients",
+                priority="Normal",
+                department="OPD",
+                recipient="Reception & Clinical Staff",
+            )
+
+            # Automated Billing Generation
+            try:
+                generate_bill_for_patient(patient, db)
+            except Exception as bill_err:
+                print(f"Failed to auto-generate patient bill: {bill_err}")
+
             db.commit()
             db.refresh(patient)
 
@@ -417,6 +438,11 @@ def update_patient(
     try:
         db.commit()
         db.refresh(patient)
+        try:
+            generate_bill_for_patient(patient, db)
+            db.commit()
+        except Exception as b_err:
+            print(f"Failed to sync patient bill on update: {b_err}")
 
     except IntegrityError:
         db.rollback()

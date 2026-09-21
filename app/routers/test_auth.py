@@ -4,6 +4,9 @@ from app.models.user import User
 from app.core.dependencies import (
     get_current_user,
     require_admin,
+    require_doctor,
+    require_nurse,
+    require_staff,
     require_role,
 )
 
@@ -36,14 +39,47 @@ def admin_route(
     }
 
 
-@router.get("/admin-receptionist")
-def admin_receptionist_route(
-    current_user: User = Depends(
-        require_role("admin", "receptionist")
-    )
+@router.get("/doctor")
+def doctor_route(
+    current_user: User = Depends(require_doctor)
 ):
     return {
-        "message": "Admin or receptionist access granted",
+        "message": "Doctor access granted",
         "user": current_user.name,
         "role": current_user.role
     }
+
+
+@router.get("/nurse")
+def nurse_route(
+    current_user: User = Depends(require_nurse)
+):
+    return {
+        "message": "Nurse access granted",
+        "user": current_user.name,
+        "role": current_user.role
+    }
+
+
+@router.get("/staff")
+def staff_route(
+    current_user: User = Depends(require_staff)
+):
+    return {
+        "message": "Staff access granted",
+        "user": current_user.name,
+        "role": current_user.role
+    }
+
+
+@router.get("/admin-receptionist")
+def admin_receptionist_route(
+    current_user: User = Depends(
+        require_role("admin", "receptionist", "staff")
+    )
+):
+    return {
+        "message": "Admin or staff access granted",
+        "user": current_user.name,
+        "role": current_user.role
+    }

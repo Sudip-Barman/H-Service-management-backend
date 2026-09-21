@@ -1,9 +1,13 @@
+from typing import TYPE_CHECKING
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Staff(Base):
@@ -14,6 +18,14 @@ class Staff(Base):
         primary_key=True,
         index=True,
         autoincrement=True
+    )
+
+    user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        unique=True,
+        nullable=True,
+        index=True
     )
 
     name: Mapped[str] = mapped_column(
@@ -82,3 +94,8 @@ class Staff(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
+
+    user: Mapped["User | None"] = relationship(
+        "User",
+        back_populates="staff"
+    )

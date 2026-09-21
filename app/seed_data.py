@@ -21,6 +21,7 @@ from app.models.service import Service
 from app.models.shift import StaffShift
 from app.models.staff import Staff
 from app.models.user import User
+from app.models.asset import HospitalAsset
 from app.core.security import hash_password
 
 
@@ -246,7 +247,7 @@ def seed():
                 InventoryItem(code="INV-002", name="Disposable Syringe 5ml", category="Consumables", item_type="Disposable", unit="Box", quantity=350, minimum=80, maximum=800, price=120.0, supplier="Healthcare Equip Co", location="Store Room A", status="Available"),
                 InventoryItem(code="INV-003", name="N95 Face Masks", category="Safety Gear", item_type="PPE", unit="Box", quantity=200, minimum=50, maximum=500, price=300.0, supplier="SafetyMed Ltd", location="Store Room B", status="Available"),
                 InventoryItem(code="INV-004", name="IV Infusion Set", category="Consumables", item_type="Disposable", unit="Pack", quantity=40, minimum=50, maximum=300, price=45.0, supplier="MedSupply India", location="Store Room A", status="Low Stock"),
-                InventoryItem(code="INV-005", name="Digital Thermometer", category="Equipment", item_type="Reusable", unit="Piece", quantity=25, minimum=10, maximum=50, price=450.0, supplier="Omron Healthcare", location="Store Room C", status="Available"),
+                InventoryItem(code="INV-005", name="Cotton Bandage Roll", category="Consumables", item_type="Disposable", unit="Roll", quantity=120, minimum=20, maximum=400, price=45.0, supplier="MedSupply India", location="Store Room B", status="Available"),
             ]
             db.add_all(inventory_items)
             db.commit()
@@ -346,6 +347,20 @@ def seed():
                 Feedback(feedback_code="FB-2047", patient="Rahul Das", email="rahul.das@example.com", service="Elder care support", rating=4, status="Reviewed", date=today_str, comment="Very helpful care team. The follow-up call was thoughtful."),
             ]
             db.add_all(fbs)
+            db.commit()
+
+        # 17. Hospital Assets & Equipment
+        if db.query(HospitalAsset).count() == 0:
+            assets = [
+                HospitalAsset(asset_code="AST-001", name="12-Lead Digital ECG Machine", category="Diagnostic Equipment", department="Cardiology", model_number="GE-Mac2000", serial_number="SN-ECG-9921", location="Cardiology OPD 201", purchase_cost=185000.0, purchase_date="2024-03-15", warranty_expiry="2027-03-15", next_maintenance="2026-10-15", assigned_to="Dr. Arindam Sen", condition="Good", status="Operational", notes="Regular monthly calibration completed."),
+                HospitalAsset(asset_code="AST-002", name="Color Doppler Ultrasound System", category="Diagnostic Equipment", department="Radiology", model_number="Philips-Affiniti70", serial_number="SN-US-4432", location="Ultrasound Room 1", purchase_cost=1450000.0, purchase_date="2023-08-10", warranty_expiry="2026-08-10", next_maintenance="2026-11-01", assigned_to="Dr. Moumita Roy", condition="Good", status="Operational", notes="High-resolution abdominal and cardiac probes."),
+                HospitalAsset(asset_code="AST-003", name="Multipara Patient Monitor", category="Patient Monitoring", department="ICU", model_number="Mindray-ePM12M", serial_number="SN-MON-8812", location="ICU Bed 04", purchase_cost=95000.0, purchase_date="2024-01-20", warranty_expiry="2027-01-20", next_maintenance="2026-12-05", assigned_to="Nurse Priyanka", condition="Good", status="In Use", notes="Monitors SpO2, NIBP, ECG, Temp."),
+                HospitalAsset(asset_code="AST-004", name="ICU Intensive Care Ventilator", category="Life Support & ICU", department="ICU", model_number="Drager-EvitaV300", serial_number="SN-VENT-1109", location="ICU Bed 02", purchase_cost=820000.0, purchase_date="2023-11-12", warranty_expiry="2026-11-12", next_maintenance="2026-09-30", assigned_to="Dr. Arindam Sen", condition="Good", status="In Use", notes="Invasive and non-invasive ventilation modes."),
+                HospitalAsset(asset_code="AST-005", name="Biphasic Defibrillator Monitor", category="Life Support & ICU", department="Emergency", model_number="Zoll-RSeries", serial_number="SN-DEF-5510", location="Emergency Bay 1", purchase_cost=320000.0, purchase_date="2024-05-18", warranty_expiry="2027-05-18", next_maintenance="2026-10-10", assigned_to="Emergency In-Charge", condition="Good", status="Operational", notes="Pacing & CPR dashboard equipped."),
+                HospitalAsset(asset_code="AST-006", name="Motorized ICU Electric Bed", category="Hospital Furniture", department="ICU", model_number="Stryker-ProCare", serial_number="SN-BED-2004", location="ICU Bed 01", purchase_cost=145000.0, purchase_date="2023-06-01", warranty_expiry="2028-06-01", next_maintenance="2027-01-15", assigned_to="Nurse Moumita", condition="Good", status="In Use", notes="5-function motorized adjustment."),
+                HospitalAsset(asset_code="AST-007", name="Hydraulic Foldable Wheelchair", category="Hospital Furniture", department="Emergency", model_number="MedMove-H2", serial_number="SN-WC-0012", location="Reception / Entrance", purchase_cost=18500.0, purchase_date="2024-02-10", warranty_expiry="2026-02-10", next_maintenance="2026-11-20", assigned_to="Amit Sharma", condition="Good", status="Operational", notes="Patient transport wheelchair."),
+            ]
+            db.add_all(assets)
             db.commit()
 
         print("Seeding completed successfully!")

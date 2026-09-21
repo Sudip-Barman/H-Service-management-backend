@@ -33,6 +33,9 @@ def get_feedback(db: Session = Depends(get_db)):
     return [_format_feedback(f) for f in feedbacks]
 
 
+from app.services.notification_service import create_system_notification
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_feedback(data: FeedbackCreate, db: Session = Depends(get_db)):
     code = data.feedback_code
@@ -51,6 +54,20 @@ def create_feedback(data: FeedbackCreate, db: Session = Depends(get_db)):
         comment=data.comment,
     )
     db.add(fb)
+
+    # Automated Notification Trigger
+    p_rating = fb.rating if fb.rating is not None else 5
+    priority_level = "High" if p_rating <= 2 else "Normal"
+    create_system_notification(
+        db=db,
+        title=f"New Patient Feedback: {fb.patient}",
+        message=f"Feedback submitted by {fb.patient} for {fb.service} with {p_rating}★ rating: '{fb.comment or 'No additional comment'}'.",
+        notif_type="Feedback",
+        priority=priority_level,
+        department="Patient Relations",
+        recipient="Quality & Hospital Operations",
+    )
+
     db.commit()
     db.refresh(fb)
     return _format_feedback(fb)

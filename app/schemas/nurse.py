@@ -21,6 +21,8 @@ class NurseCreate(BaseModel):
     shift_type: str = "Morning"
     photo: str | None = None
     status: str = "Active"
+    username: str | None = None
+    temporary_password: str | None = None
 
 
 class NurseUpdate(BaseModel):
@@ -42,6 +44,8 @@ class NurseUpdate(BaseModel):
     shift_type: str | None = None
     photo: str | None = None
     status: str | None = None
+    username: str | None = None
+    temporary_password: str | None = None
 
 
 class NurseResponse(BaseModel):
@@ -66,5 +70,7 @@ class NurseResponse(BaseModel):
     shift_type: str
     photo: str | None
     status: str
+    user_id: int | None = None
+    temporary_password: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

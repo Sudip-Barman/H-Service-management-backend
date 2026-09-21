@@ -95,6 +95,9 @@ def get_admission(admission_id: int, db: Session = Depends(get_db)):
     return _format_admission(admission, db)
 
 
+from app.services.notification_service import create_system_notification
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_admission(data: AdmissionCreate, db: Session = Depends(get_db)):
     existing = db.query(Admission).filter(
@@ -107,7 +110,7 @@ def create_admission(data: AdmissionCreate, db: Session = Depends(get_db)):
         )
 
     patient = db.query(Patient).filter(Patient.id == data.patient_id).first()
-    patient_full_name = f"{patient.first_name} {patient.last_name or ''}".strip() if patient else None
+    patient_full_name = f"{patient.first_name} {patient.last_name or ''}".strip() if patient else "Patient"
     patient_code = patient.registration_number if patient else None
 
     admission = Admission(**data.model_dump())
@@ -122,6 +125,18 @@ def create_admission(data: AdmissionCreate, db: Session = Depends(get_db)):
             bed.patient_name = patient_full_name
             bed.patient_code = patient_code
             bed.admission_date = str(data.admission_date)
+
+    # Automated Notification Trigger
+    priority_level = "Urgent" if data.admission_type in ["Emergency", "ICU"] else "Normal"
+    create_system_notification(
+        db=db,
+        title=f"New Admission: {patient_full_name}",
+        message=f"Admission #{admission.admission_number} created for {patient_full_name} ({data.admission_type or 'General'}). Status: {data.status or 'Admitted'}.",
+        notif_type="Admissions",
+        priority=priority_level,
+        department="IPD / Inpatient",
+        recipient="Clinical & Nursing Staff",
+    )
 
     db.commit()
     db.refresh(admission)

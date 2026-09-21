@@ -20,6 +20,7 @@ from app.models.request import HospitalRequest
 from app.models.notification import Notification
 from app.models.feedback import Feedback
 from app.models.settings import HospitalSetting
+from app.models.asset import HospitalAsset
 
 __all__ = [
     "User",
@@ -45,4 +46,5 @@ __all__ = [
     "Notification",
     "Feedback",
     "HospitalSetting",
+    "HospitalAsset",
 ]

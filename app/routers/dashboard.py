@@ -78,15 +78,22 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
             })
 
     # 2. Real Patient Flow
-    emergency_count = db.query(EmergencyPatient).filter(EmergencyPatient.status.in_(["Triage", "Under Treatment", "Waiting"])).count()
-    under_treatment = db.query(Booking).filter(Booking.status.in_(["Confirmed", "Scheduled"])).count()
+    emergency_count = db.query(EmergencyPatient).filter(
+        EmergencyPatient.status.in_(["Triage", "Under Treatment", "Waiting"])
+    ).count()
+
+    # "Under Treatment" = patients currently admitted in a ward/bed
+    under_treatment = admitted_patients  # same as Admission.status == "Admitted"
+
     discharged_count = db.query(Admission).filter(Admission.status == "Discharged").count()
 
+    # Calculate percentages relative to total registered patients (avoid division by zero)
+    _total = max(total_patients, 1)
     patient_flow = [
-        {"label": "Admitted", "value": admitted_patients},
-        {"label": "Emergency Active", "value": emergency_count},
-        {"label": "Under Treatment", "value": max(under_treatment, 5)},
-        {"label": "Discharged", "value": discharged_count},
+        {"label": "Admitted",         "value": admitted_patients, "percentage": round(admitted_patients  / _total * 100)},
+        {"label": "Emergency Active", "value": emergency_count,   "percentage": round(emergency_count   / _total * 100)},
+        {"label": "Under Treatment",  "value": under_treatment,   "percentage": round(under_treatment   / _total * 100)},
+        {"label": "Discharged",       "value": discharged_count,  "percentage": round(discharged_count  / _total * 100)},
     ]
 
     # 3. Real Recent Activity

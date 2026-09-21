@@ -65,6 +65,9 @@ def get_service(
     return service
 
 
+from app.services.notification_service import create_system_notification
+
+
 @router.post(
     "",
     response_model=ServiceResponse,
@@ -88,6 +91,18 @@ def create_service(
     )
 
     db.add(new_service)
+
+    # Automated Notification Trigger
+    create_system_notification(
+        db=db,
+        title=f"New Service Added: {new_service.name}",
+        message=f"A new medical service '{new_service.name}' ({new_service.category}) was added with fee ₹{new_service.price}.",
+        notif_type="Services",
+        priority="Normal",
+        department=new_service.category or "Administration",
+        recipient="All Hospital Staff",
+    )
+
     db.commit()
     db.refresh(new_service)
 

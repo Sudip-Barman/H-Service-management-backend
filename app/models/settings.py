@@ -8,5 +8,5 @@ class HospitalSetting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(100), unique=True, nullable=False, index=True)
-    value = Column(Text, nullable=True)
+    value = Column(Text(length=4294967295), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.doctor import Doctor
+from app.models.user import User
 from app.schemas.doctor import DoctorResponse
+from app.core.security import hash_password
 
 
 router = APIRouter(
@@ -237,8 +239,33 @@ def create_doctor(
     available_status: str = Form("Available"),
     status: str = Form("Active"),
     photo: UploadFile | None = File(None),
+    username: str | None = Form(None),
+    temporary_password: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
+    # ------------------------------------------------------------------------
+    # Validate username uniqueness if provided
+    # ------------------------------------------------------------------------
+
+    clean_username = username.strip().lower() if username and username.strip() else None
+    if clean_username:
+        if len(clean_username) < 3:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username must be at least 3 characters long",
+            )
+        existing_user = db.query(User).filter(User.username == clean_username).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Username '{clean_username}' is already taken",
+            )
+        if temporary_password and len(temporary_password) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Temporary password must be at least 6 characters long",
+            )
+
     # ------------------------------------------------------------------------
     # Check duplicate registration number
     # ------------------------------------------------------------------------
@@ -326,8 +353,43 @@ def create_doctor(
 
     try:
         db.add(doctor)
+        db.flush()
+
+        # Always ensure a User login account exists for the doctor
+        final_username = clean_username
+        if not final_username:
+            base_u = f"dr_{first_name.lower().replace(' ', '_')}"
+            final_username = base_u
+            cnt = 1
+            while db.query(User).filter(User.username == final_username).first():
+                final_username = f"{base_u}_{doctor.id}" if cnt == 1 else f"{base_u}_{doctor.id}_{cnt}"
+                cnt += 1
+
+        final_temp_password = temporary_password if temporary_password and len(temporary_password) >= 6 else "TempPass@123"
+
+        clean_email = email.strip().lower() if email and email.strip() else f"{final_username}@hospital.com"
+        existing_email_user = db.query(User).filter(User.email == clean_email).first()
+        if existing_email_user:
+            clean_email = f"{final_username}.{doctor.id}@hospital.com"
+
+        doc_full_name = f"Dr. {first_name} {last_name or ''}".strip()
+        user_account = User(
+            name=doc_full_name,
+            username=final_username,
+            email=clean_email,
+            phone=phone.strip() if phone else None,
+            password_hash=hash_password(final_temp_password),
+            role="doctor",
+            is_active=True,
+            must_change_password=True,
+        )
+        db.add(user_account)
+        db.flush()
+
+        doctor.user_id = user_account.id
         db.commit()
         db.refresh(doctor)
+        doctor.temporary_password = final_temp_password
 
     except Exception:
         db.rollback()
@@ -373,6 +435,8 @@ def update_doctor(
     available_status: str | None = Form(None),
     status: str | None = Form(None),
     photo: UploadFile | None = File(None),
+    username: str | None = Form(None),
+    temporary_password: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     # ------------------------------------------------------------------------
@@ -504,6 +568,71 @@ def update_doctor(
     try:
         db.commit()
         db.refresh(doctor)
+
+        # Handle updating or creating login credentials
+        clean_username = username.strip().lower() if username and username.strip() else None
+        if clean_username or temporary_password:
+            # Look up existing user by doctor's email or username
+            existing_user = None
+            if doctor.email:
+                existing_user = db.query(User).filter(User.email == doctor.email.strip().lower()).first()
+            if not existing_user and clean_username:
+                existing_user = db.query(User).filter(User.username == clean_username).first()
+
+            # Check if username belongs to someone else
+            if clean_username:
+                user_with_username = db.query(User).filter(User.username == clean_username).first()
+                if user_with_username and existing_user and user_with_username.id != existing_user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Username '{clean_username}' is already taken",
+                    )
+                elif user_with_username and not existing_user:
+                    existing_user = user_with_username
+
+            if existing_user:
+                if clean_username:
+                    existing_user.username = clean_username
+                if temporary_password:
+                    if len(temporary_password) < 6:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Temporary password must be at least 6 characters long",
+                        )
+                    existing_user.password_hash = hash_password(temporary_password)
+                    existing_user.must_change_password = True
+                existing_user.role = "doctor"
+                existing_user.is_active = True
+                if doctor.phone:
+                    existing_user.phone = doctor.phone
+                if doctor.email:
+                    existing_user.email = doctor.email.strip().lower()
+                doctor.user_id = existing_user.id
+            elif clean_username and temporary_password:
+                if len(temporary_password) < 6:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Temporary password must be at least 6 characters long",
+                    )
+                target_email = doctor.email.strip().lower() if doctor.email else f"{clean_username}@hospital.com"
+                if db.query(User).filter(User.email == target_email).first():
+                    target_email = f"{clean_username}.{doctor.id}@hospital.com"
+
+                doc_full_name = f"Dr. {doctor.first_name} {doctor.last_name or ''}".strip()
+                new_user = User(
+                    name=doc_full_name,
+                    username=clean_username,
+                    email=target_email,
+                    phone=doctor.phone,
+                    password_hash=hash_password(temporary_password),
+                    role="doctor",
+                    is_active=True,
+                    must_change_password=True,
+                )
+                db.add(new_user)
+                db.flush()
+                doctor.user_id = new_user.id
+            db.commit()
 
     except Exception:
         db.rollback()

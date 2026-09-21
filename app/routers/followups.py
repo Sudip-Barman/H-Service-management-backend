@@ -43,6 +43,10 @@ def get_followups(db: Session = Depends(get_db)):
     return [_format_followup(f) for f in items]
 
 
+from datetime import date
+from app.services.notification_service import create_system_notification
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_followup(data: FollowUpCreate, db: Session = Depends(get_db)):
     # Auto-fill patient details if patient_id is provided
@@ -77,6 +81,31 @@ def create_followup(data: FollowUpCreate, db: Session = Depends(get_db)):
         status=data.status,
     )
     db.add(fu)
+
+    # Automated Notification Trigger
+    today = date.today()
+    ref_code = fu.follow_up_code or "FU"
+    if fu.follow_up_date and fu.follow_up_date <= today:
+        create_system_notification(
+            db=db,
+            title=f"Follow-Up Reminder: {fu.name}",
+            message=f"Follow-up {ref_code} for patient {fu.name} is scheduled for today ({fu.follow_up_date}). Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
+            notif_type="Follow-up",
+            priority="Urgent" if fu.priority in ["High", "Urgent"] else "Normal",
+            department="Reception",
+            recipient=fu.assigned_to or "All Reception Staff",
+        )
+    else:
+        create_system_notification(
+            db=db,
+            title=f"New Follow-Up Scheduled: {fu.name}",
+            message=f"Follow-up {ref_code} scheduled for {fu.name} on {fu.follow_up_date}. Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
+            notif_type="Follow-up",
+            priority="Normal",
+            department="Reception",
+            recipient=fu.assigned_to or "All Reception Staff",
+        )
+
     db.commit()
     db.refresh(fu)
     return _format_followup(fu)
