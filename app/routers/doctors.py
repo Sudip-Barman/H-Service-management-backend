@@ -1,4 +1,6 @@
 import os
+import re
+import secrets
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -10,7 +12,7 @@ from fastapi import (
     Form,
     HTTPException,
     UploadFile,
-    status,
+    status as http_status,
 )
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -176,11 +178,15 @@ def delete_doctor_photo(photo_path: str | None) -> None:
 def get_doctors(
     db: Session = Depends(get_db),
 ):
-    return (
+    doctors = (
         db.query(Doctor)
         .order_by(Doctor.id.desc())
         .all()
     )
+    for doc in doctors:
+        if doc.user:
+            doc.username = doc.user.username
+    return doctors
 
 
 # ============================================================================
@@ -207,6 +213,9 @@ def get_doctor(
             detail="Doctor not found",
         )
 
+    if doctor.user:
+        doctor.username = doctor.user.username
+
     return doctor
 
 
@@ -217,7 +226,7 @@ def get_doctor(
 @router.post(
     "",
     response_model=DoctorResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=http_status.HTTP_201_CREATED,
 )
 def create_doctor(
     registration_number: str = Form(...),
@@ -251,18 +260,18 @@ def create_doctor(
     if clean_username:
         if len(clean_username) < 3:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Username must be at least 3 characters long",
             )
         existing_user = db.query(User).filter(User.username == clean_username).first()
         if existing_user:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=f"Username '{clean_username}' is already taken",
             )
         if temporary_password and len(temporary_password) < 6:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Temporary password must be at least 6 characters long",
             )
 
@@ -280,7 +289,7 @@ def create_doctor(
 
     if existing:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Doctor with this registration number already exists",
         )
 
@@ -297,7 +306,7 @@ def create_doctor(
             parsed_dob = date.fromisoformat(date_of_birth)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date_of_birth. Expected YYYY-MM-DD.",
             )
 
@@ -312,7 +321,7 @@ def create_doctor(
             )
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid license_expiry. Expected YYYY-MM-DD.",
             )
 
@@ -355,17 +364,20 @@ def create_doctor(
         db.add(doctor)
         db.flush()
 
-        # Always ensure a User login account exists for the doctor
-        final_username = clean_username
-        if not final_username:
-            base_u = f"dr_{first_name.lower().replace(' ', '_')}"
-            final_username = base_u
-            cnt = 1
-            while db.query(User).filter(User.username == final_username).first():
-                final_username = f"{base_u}_{doctor.id}" if cnt == 1 else f"{base_u}_{doctor.id}_{cnt}"
-                cnt += 1
+        # Always automatically generate a unique username and temporary password
+        clean_first = re.sub(r'[^a-z0-9]', '', (first_name or '').lower())
+        clean_last = re.sub(r'[^a-z0-9]', '', (last_name or '').lower())
+        base_u = f"dr_{clean_first}_{clean_last}".strip('_') if clean_last else f"dr_{clean_first}".strip('_')
+        if not base_u or base_u == "dr":
+            base_u = f"dr_{doctor.id}"
 
-        final_temp_password = temporary_password if temporary_password and len(temporary_password) >= 6 else "TempPass@123"
+        final_username = base_u
+        cnt = 1
+        while db.query(User).filter(User.username == final_username).first():
+            final_username = f"{base_u}_{secrets.randbelow(900) + 100}"
+            cnt += 1
+
+        final_temp_password = f"Doctor@{secrets.randbelow(900) + 100}"
 
         clean_email = email.strip().lower() if email and email.strip() else f"{final_username}@hospital.com"
         existing_email_user = db.query(User).filter(User.email == clean_email).first()
@@ -389,6 +401,7 @@ def create_doctor(
         doctor.user_id = user_account.id
         db.commit()
         db.refresh(doctor)
+        doctor.username = user_account.username
         doctor.temporary_password = final_temp_password
 
     except Exception:
@@ -399,7 +412,7 @@ def create_doctor(
             delete_doctor_photo(photo_path)
 
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create doctor.",
         )
 
@@ -451,7 +464,7 @@ def update_doctor(
 
     if not doctor:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Doctor not found",
         )
 
@@ -471,7 +484,7 @@ def update_doctor(
 
         if existing:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Another doctor already uses this registration number.",
             )
 
@@ -497,7 +510,7 @@ def update_doctor(
             doctor.date_of_birth = date.fromisoformat(date_of_birth)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date_of_birth. Expected YYYY-MM-DD.",
             )
 
@@ -540,7 +553,7 @@ def update_doctor(
             )
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid license_expiry. Expected YYYY-MM-DD.",
             )
 
@@ -571,10 +584,12 @@ def update_doctor(
 
         # Handle updating or creating login credentials
         clean_username = username.strip().lower() if username and username.strip() else None
-        if clean_username or temporary_password:
-            # Look up existing user by doctor's email or username
+        if clean_username or temporary_password or doctor.email:
+            # Look up existing user by doctor's user_id, email, or username
             existing_user = None
-            if doctor.email:
+            if doctor.user_id:
+                existing_user = db.query(User).filter(User.id == doctor.user_id).first()
+            if not existing_user and doctor.email:
                 existing_user = db.query(User).filter(User.email == doctor.email.strip().lower()).first()
             if not existing_user and clean_username:
                 existing_user = db.query(User).filter(User.username == clean_username).first()
@@ -584,34 +599,30 @@ def update_doctor(
                 user_with_username = db.query(User).filter(User.username == clean_username).first()
                 if user_with_username and existing_user and user_with_username.id != existing_user.id:
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
+                        status_code=http_status.HTTP_400_BAD_REQUEST,
                         detail=f"Username '{clean_username}' is already taken",
                     )
                 elif user_with_username and not existing_user:
                     existing_user = user_with_username
 
             if existing_user:
+                # Update account details while strictly PRESERVING the existing password
                 if clean_username:
                     existing_user.username = clean_username
-                if temporary_password:
-                    if len(temporary_password) < 6:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Temporary password must be at least 6 characters long",
-                        )
-                    existing_user.password_hash = hash_password(temporary_password)
-                    existing_user.must_change_password = True
                 existing_user.role = "doctor"
                 existing_user.is_active = True
                 if doctor.phone:
                     existing_user.phone = doctor.phone
                 if doctor.email:
                     existing_user.email = doctor.email.strip().lower()
+                doc_full_name = f"Dr. {doctor.first_name} {doctor.last_name or ''}".strip()
+                existing_user.name = doc_full_name
                 doctor.user_id = existing_user.id
             elif clean_username and temporary_password:
+                # First-time account creation for this doctor
                 if len(temporary_password) < 6:
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
+                        status_code=http_status.HTTP_400_BAD_REQUEST,
                         detail="Temporary password must be at least 6 characters long",
                     )
                 target_email = doctor.email.strip().lower() if doctor.email else f"{clean_username}@hospital.com"
@@ -634,7 +645,10 @@ def update_doctor(
                 doctor.user_id = new_user.id
             db.commit()
 
-    except Exception:
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
         db.rollback()
 
         # New photo should not remain if DB update failed.
@@ -642,8 +656,8 @@ def update_doctor(
             delete_doctor_photo(new_photo)
 
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update doctor.",
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update doctor: {str(e)}",
         )
 
     # Delete old photo only after successful DB update.
@@ -659,7 +673,7 @@ def update_doctor(
 
 @router.delete(
     "/{doctor_id}",
-    status_code=status.HTTP_200_OK,
+    status_code=http_status.HTTP_200_OK,
 )
 def delete_doctor(
     doctor_id: int,
@@ -673,7 +687,7 @@ def delete_doctor(
 
     if not doctor:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Doctor not found",
         )
 
@@ -687,7 +701,7 @@ def delete_doctor(
         db.rollback()
 
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete doctor.",
         )
 

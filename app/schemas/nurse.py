@@ -71,6 +71,7 @@ class NurseResponse(BaseModel):
     photo: str | None
     status: str
     user_id: int | None = None
+    username: str | None = None
     temporary_password: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

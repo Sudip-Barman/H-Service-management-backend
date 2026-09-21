@@ -210,8 +210,49 @@ def get_booking(
     return booking
 
 
+from app.models.doctor import Doctor
 from app.services.billing_service import generate_bill_for_booking
-from app.services.notification_service import create_system_notification
+from app.services.notification_service import (
+    create_system_notification,
+    create_targeted_notification,
+)
+
+
+def _notify_doctor_booking(booking: Booking, event: str, db: Session):
+    if not booking.doctor_id:
+        return
+    doc = db.query(Doctor).filter(Doctor.id == booking.doctor_id).first()
+    if not doc or not doc.user_id:
+        return
+
+    p_name = booking.patient_name or "Patient"
+    if event == "create":
+        title = f"New Appointment: {p_name}"
+        msg = f"New appointment ({booking.booking_number}) assigned with {p_name} on {booking.booking_date} at {booking.booking_time}."
+        n_type = "appointment_assigned"
+    elif event == "cancel":
+        title = f"Appointment Cancelled: {p_name}"
+        msg = f"Appointment {booking.booking_number} with {p_name} for {booking.booking_date} has been cancelled."
+        n_type = "appointment_cancelled"
+    else:
+        title = f"Appointment Updated: {p_name}"
+        msg = f"Appointment {booking.booking_number} with {p_name} has been updated (Date: {booking.booking_date}, Time: {booking.booking_time}, Status: {booking.status})."
+        n_type = "appointment_updated"
+
+    create_targeted_notification(
+        db=db,
+        title=title,
+        message=msg,
+        recipient_user_id=doc.user_id,
+        recipient_role="doctor",
+        notif_type=n_type,
+        priority="Normal",
+        department=doc.department or "Outpatient",
+        recipient=f"Dr. {doc.first_name} {doc.last_name or ''}".strip(),
+        related_entity_type="appointment",
+        related_entity_id=booking.booking_id,
+        action_url="/workforce/appointments",
+    )
 
 
 @router.post(
@@ -251,10 +292,10 @@ def create_booking(
     booking_dict["booking_number"] = booking_number
 
     booking = Booking(**booking_dict)
-
     db.add(booking)
+    db.flush()
 
-    # Automated Notification Trigger
+    # Automated Notification Trigger for Admin/Reception
     p_name = booking.patient_name or "Patient"
     p_priority = "Urgent" if booking.priority in ["Urgent", "Emergency"] else ("High" if booking.priority == "High" else "Normal")
     create_system_notification(
@@ -265,7 +306,14 @@ def create_booking(
         priority=p_priority,
         department="Reception",
         recipient="Reception & Medical Staff",
+        recipient_role="admin",
+        related_entity_type="appointment",
+        related_entity_id=booking.booking_id,
+        action_url="/admin/booking",
     )
+
+    # Targeted Doctor Notification
+    _notify_doctor_booking(booking, "create", db)
 
     # Automated Billing Generation
     try:
@@ -346,6 +394,9 @@ def update_booking(
     except Exception as bill_err:
         print(f"Failed to update booking bill: {bill_err}")
 
+    # Notify Doctor
+    _notify_doctor_booking(booking, "cancel" if booking.status == "Cancelled" else "update", db)
+
     db.commit()
     db.refresh(booking)
 
@@ -383,6 +434,9 @@ def update_booking_status(
 
     booking.status = data.status
     booking.updated_at = datetime.utcnow()
+
+    # Notify Doctor
+    _notify_doctor_booking(booking, "cancel" if booking.status == "Cancelled" else "update", db)
 
     db.commit()
     db.refresh(booking)

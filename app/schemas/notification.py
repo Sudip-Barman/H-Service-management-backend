@@ -11,6 +11,11 @@ class NotificationCreate(BaseModel):
     date: str | None = None
     time: str | None = None
     read: bool = False
+    recipient_user_id: int | None = None
+    recipient_role: str | None = None
+    related_entity_type: str | None = None
+    related_entity_id: int | None = None
+    action_url: str | None = None
 
 
 class NotificationUpdate(BaseModel):
@@ -21,6 +26,11 @@ class NotificationUpdate(BaseModel):
     department: str | None = None
     recipient: str | None = None
     read: bool | None = None
+    recipient_user_id: int | None = None
+    recipient_role: str | None = None
+    related_entity_type: str | None = None
+    related_entity_id: int | None = None
+    action_url: str | None = None
 
 
 class NotificationResponse(BaseModel):
@@ -34,5 +44,10 @@ class NotificationResponse(BaseModel):
     date: str | None
     time: str | None
     read: bool
+    recipient_user_id: int | None = None
+    recipient_role: str | None = None
+    related_entity_type: str | None = None
+    related_entity_id: int | None = None
+    action_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

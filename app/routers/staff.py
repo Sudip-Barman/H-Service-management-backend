@@ -1,3 +1,5 @@
+import re
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -26,7 +28,9 @@ def get_staff(
         .order_by(Staff.id.desc())
         .all()
     )
-
+    for s in staff:
+        if s.user:
+            s.username = s.user.username
     return staff
 
 
@@ -49,6 +53,9 @@ def get_staff_member(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Staff member not found"
         )
+
+    if staff.user:
+        staff.username = staff.user.username
 
     return staff
 
@@ -115,17 +122,19 @@ def create_staff(
     db.commit()
     db.refresh(new_staff)
 
-    # Always ensure a User login account exists for staff
-    final_username = clean_username
-    if not final_username:
-        base_u = f"staff_{new_staff.name.lower().replace(' ', '_')}"
-        final_username = base_u
-        cnt = 1
-        while db.query(User).filter(User.username == final_username).first():
-            final_username = f"{base_u}_{new_staff.id}" if cnt == 1 else f"{base_u}_{new_staff.id}_{cnt}"
-            cnt += 1
+    # Always automatically generate a unique username and temporary password
+    clean_name = re.sub(r'[^a-z0-9_]', '', new_staff.name.lower().replace(' ', '_'))[:18]
+    base_u = f"staff_{clean_name}".strip('_')
+    if not base_u or base_u == "staff":
+        base_u = f"staff_{new_staff.id}"
 
-    final_temp_password = staff_data.temporary_password if staff_data.temporary_password and len(staff_data.temporary_password) >= 6 else "TempPass@123"
+    final_username = base_u
+    cnt = 1
+    while db.query(User).filter(User.username == final_username).first():
+        final_username = f"{base_u}_{secrets.randbelow(900) + 100}"
+        cnt += 1
+
+    final_temp_password = f"Staff@{secrets.randbelow(900) + 100}"
 
     clean_email = new_staff.email.strip().lower() if new_staff.email and new_staff.email.strip() else f"{final_username}@hospital.com"
     existing_email_user = db.query(User).filter(User.email == clean_email).first()
@@ -148,6 +157,7 @@ def create_staff(
     new_staff.user_id = user_account.id
     db.commit()
     db.refresh(new_staff)
+    new_staff.username = user_account.username
     new_staff.temporary_password = final_temp_password
 
     return new_staff
@@ -182,9 +192,11 @@ def update_staff(
         setattr(staff, field, value)
 
     clean_username = username.strip().lower() if username and username.strip() else None
-    if clean_username or temporary_password:
+    if clean_username or temporary_password or staff.email:
         existing_user = None
-        if staff.email:
+        if staff.user_id:
+            existing_user = db.query(User).filter(User.id == staff.user_id).first()
+        if not existing_user and staff.email:
             existing_user = db.query(User).filter(User.email == staff.email.strip().lower()).first()
         if not existing_user and clean_username:
             existing_user = db.query(User).filter(User.username == clean_username).first()
@@ -200,24 +212,20 @@ def update_staff(
                 existing_user = user_with_username
 
         if existing_user:
+            # Update account details while strictly PRESERVING the existing password
             if clean_username:
                 existing_user.username = clean_username
-            if temporary_password:
-                if len(temporary_password) < 6:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Temporary password must be at least 6 characters long",
-                    )
-                existing_user.password_hash = hash_password(temporary_password)
-                existing_user.must_change_password = True
             existing_user.role = "staff"
             existing_user.is_active = True
             if staff.phone:
                 existing_user.phone = staff.phone
             if staff.email:
                 existing_user.email = staff.email.strip().lower()
+            if staff.name:
+                existing_user.name = staff.name
             staff.user_id = existing_user.id
         elif clean_username and temporary_password:
+            # First-time account creation for this staff
             if len(temporary_password) < 6:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

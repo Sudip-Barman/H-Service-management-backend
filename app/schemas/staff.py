@@ -63,6 +63,7 @@ class StaffResponse(BaseModel):
     joining_date: date | None
     status: str
     user_id: int | None = None
+    username: str | None = None
     temporary_password: str | None = None
 
     model_config = ConfigDict(

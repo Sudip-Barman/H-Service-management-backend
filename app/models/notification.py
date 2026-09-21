@@ -64,6 +64,34 @@ class Notification(Base):
         nullable=False
     )
 
+    recipient_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True
+    )
+
+    recipient_role: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True
+    )
+
+    related_entity_type: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True
+    )
+
+    related_entity_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True
+    )
+
+    action_url: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow

@@ -41,6 +41,57 @@ def get_shifts(db: Session = Depends(get_db)):
     return [_format_shift(s) for s in shifts]
 
 
+from app.models.nurse import Nurse
+from app.models.user import User
+from app.services.notification_service import create_targeted_notification
+
+
+def _notify_staff_shift(shift: StaffShift, action: str, db: Session):
+    user_id = None
+    user_role = "staff"
+    target_name = shift.staff_name
+
+    if shift.staff_id:
+        st = db.query(Staff).filter(Staff.id == shift.staff_id).first()
+        if st and st.user_id:
+            user_id = st.user_id
+            user_role = "staff"
+            target_name = st.name
+        else:
+            nurse = db.query(Nurse).filter(Nurse.id == shift.staff_id).first()
+            if nurse and nurse.user_id:
+                user_id = nurse.user_id
+                user_role = "nurse"
+                target_name = f"Nurse {nurse.first_name} {nurse.last_name or ''}".strip()
+
+    if not user_id and shift.staff_name:
+        clean = shift.staff_name.replace("Nurse", "").strip()
+        u = db.query(User).filter(
+            (User.username == clean) | (User.name.ilike(f"%{clean}%"))
+        ).first()
+        if u:
+            user_id = u.id
+            user_role = u.role
+
+    if user_id:
+        title = "Shift Assignment Assigned" if action == "create" else "Shift Assignment Updated"
+        msg = f"Your {shift.shift or 'scheduled'} shift on {shift.date} ({shift.start_time} - {shift.end_time}) at {shift.location or 'Hospital'} has been {action}d."
+        create_targeted_notification(
+            db=db,
+            title=title,
+            message=msg,
+            recipient_user_id=user_id,
+            recipient_role=user_role,
+            notif_type="task_assigned" if action == "create" else "schedule_changed",
+            priority="Normal",
+            department=shift.department or "Operations",
+            recipient=target_name,
+            related_entity_type="shift",
+            related_entity_id=shift.id,
+            action_url="/workforce/schedule",
+        )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_shift(data: ShiftCreate, db: Session = Depends(get_db)):
     staff_name = data.staff_name
@@ -70,6 +121,10 @@ def create_shift(data: ShiftCreate, db: Session = Depends(get_db)):
         notes=data.notes,
     )
     db.add(shift)
+    db.flush()
+
+    _notify_staff_shift(shift, "create", db)
+
     db.commit()
     db.refresh(shift)
     return _format_shift(shift)
@@ -86,6 +141,8 @@ def update_shift(shift_id: int, data: ShiftUpdate, db: Session = Depends(get_db)
 
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(shift, field, value)
+
+    _notify_staff_shift(shift, "update", db)
 
     db.commit()
     db.refresh(shift)

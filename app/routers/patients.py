@@ -372,18 +372,28 @@ def get_patients(
     response_model=PatientResponse
 )
 def get_patient(
-    patient_id: int,
+    patient_id: str,
     db: Session = Depends(get_db)
 ):
     """
-    Return one patient by database ID with enriched admission and activity data.
+    Return one patient by database ID or registration number with enriched admission and activity data.
     """
-
-    patient = (
-        db.query(Patient)
-        .filter(Patient.id == patient_id)
-        .first()
-    )
+    clean_id = patient_id.strip()
+    if clean_id.isdigit():
+        patient = (
+            db.query(Patient)
+            .filter(
+                (Patient.id == int(clean_id)) |
+                (Patient.registration_number == clean_id)
+            )
+            .first()
+        )
+    else:
+        patient = (
+            db.query(Patient)
+            .filter(Patient.registration_number == clean_id)
+            .first()
+        )
 
     if not patient:
         raise HTTPException(

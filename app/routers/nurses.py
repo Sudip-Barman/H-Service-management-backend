@@ -1,3 +1,5 @@
+import re
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,11 @@ router = APIRouter(
 
 @router.get("", response_model=list[NurseResponse])
 def get_nurses(db: Session = Depends(get_db)):
-    return db.query(Nurse).order_by(Nurse.id.desc()).all()
+    nurses = db.query(Nurse).order_by(Nurse.id.desc()).all()
+    for nurse in nurses:
+        if nurse.user:
+            nurse.username = nurse.user.username
+    return nurses
 
 
 @router.get("/{nurse_id}", response_model=NurseResponse)
@@ -24,6 +30,8 @@ def get_nurse(nurse_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nurse not found"
         )
+    if nurse.user:
+        nurse.username = nurse.user.username
     return nurse
 
 
@@ -84,17 +92,20 @@ def create_nurse(data: NurseCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nurse)
 
-    # Always ensure a User login account exists for the nurse
-    final_username = clean_username
-    if not final_username:
-        base_u = f"nurse_{nurse.first_name.lower().replace(' ', '_')}"
-        final_username = base_u
-        cnt = 1
-        while db.query(User).filter(User.username == final_username).first():
-            final_username = f"{base_u}_{nurse.id}" if cnt == 1 else f"{base_u}_{nurse.id}_{cnt}"
-            cnt += 1
+    # Always automatically generate a unique username and temporary password
+    clean_first = re.sub(r'[^a-z0-9]', '', (nurse.first_name or '').lower())
+    clean_last = re.sub(r'[^a-z0-9]', '', (nurse.last_name or '').lower())
+    base_u = f"nurse_{clean_first}_{clean_last}".strip('_') if clean_last else f"nurse_{clean_first}".strip('_')
+    if not base_u or base_u == "nurse":
+        base_u = f"nurse_{nurse.id}"
 
-    final_temp_password = temporary_password if temporary_password and len(temporary_password) >= 6 else "TempPass@123"
+    final_username = base_u
+    cnt = 1
+    while db.query(User).filter(User.username == final_username).first():
+        final_username = f"{base_u}_{secrets.randbelow(900) + 100}"
+        cnt += 1
+
+    final_temp_password = f"Nurse@{secrets.randbelow(900) + 100}"
 
     clean_email = nurse.email.strip().lower() if nurse.email and nurse.email.strip() else f"{final_username}@hospital.com"
     existing_email_user = db.query(User).filter(User.email == clean_email).first()
@@ -117,6 +128,7 @@ def create_nurse(data: NurseCreate, db: Session = Depends(get_db)):
     nurse.user_id = user_account.id
     db.commit()
     db.refresh(nurse)
+    nurse.username = user_account.username
     nurse.temporary_password = final_temp_password
 
     return nurse
@@ -139,9 +151,11 @@ def update_nurse(nurse_id: int, data: NurseUpdate, db: Session = Depends(get_db)
         setattr(nurse, field, value)
 
     clean_username = username.strip().lower() if username and username.strip() else None
-    if clean_username or temporary_password:
+    if clean_username or temporary_password or nurse.email:
         existing_user = None
-        if nurse.email:
+        if nurse.user_id:
+            existing_user = db.query(User).filter(User.id == nurse.user_id).first()
+        if not existing_user and nurse.email:
             existing_user = db.query(User).filter(User.email == nurse.email.strip().lower()).first()
         if not existing_user and clean_username:
             existing_user = db.query(User).filter(User.username == clean_username).first()
@@ -157,24 +171,20 @@ def update_nurse(nurse_id: int, data: NurseUpdate, db: Session = Depends(get_db)
                 existing_user = user_with_username
 
         if existing_user:
+            # Update account details while strictly PRESERVING the existing password
             if clean_username:
                 existing_user.username = clean_username
-            if temporary_password:
-                if len(temporary_password) < 6:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Temporary password must be at least 6 characters long",
-                    )
-                existing_user.password_hash = hash_password(temporary_password)
-                existing_user.must_change_password = True
             existing_user.role = "nurse"
             existing_user.is_active = True
             if nurse.phone:
                 existing_user.phone = nurse.phone
             if nurse.email:
                 existing_user.email = nurse.email.strip().lower()
+            nurse_name = f"{nurse.first_name} {nurse.last_name or ''}".strip()
+            existing_user.name = nurse_name
             nurse.user_id = existing_user.id
         elif clean_username and temporary_password:
+            # First-time account creation for this nurse
             if len(temporary_password) < 6:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

@@ -342,7 +342,7 @@ class SetEmployeeCredentialsRequest(BaseModel):
     employee_type: str  # "doctor", "nurse", "staff"
     employee_id: int | str
     username: str
-    temporary_password: str
+    temporary_password: str | None = None
     name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -361,21 +361,31 @@ def set_employee_credentials(
             detail="Username must be at least 3 characters long"
         )
 
-    if len(data.temporary_password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Temporary password must be at least 6 characters long"
-        )
-
     role = data.employee_type.strip().lower()
     if role not in ("doctor", "nurse", "staff"):
         role = "staff"
 
     clean_email = data.email.strip().lower() if data.email and data.email.strip() else None
 
-    # Check if a user matches by username or email
+    # Resolve workforce profile
+    employee_obj = None
+    try:
+        emp_id = int(data.employee_id)
+        if role == "doctor":
+            employee_obj = db.query(Doctor).filter(Doctor.id == emp_id).first()
+        elif role == "nurse":
+            employee_obj = db.query(Nurse).filter(Nurse.id == emp_id).first()
+        elif role == "staff":
+            employee_obj = db.query(Staff).filter(Staff.id == emp_id).first()
+    except (ValueError, TypeError):
+        pass
+
+    # Check if a user matches by profile user_id, email, or username
     user = None
-    if clean_email:
+    if employee_obj and employee_obj.user_id:
+        user = db.query(User).filter(User.id == employee_obj.user_id).first()
+
+    if not user and clean_email:
         user = db.query(User).filter(User.email == clean_email).first()
 
     if not user:
@@ -391,15 +401,12 @@ def set_employee_credentials(
     elif user_with_username and not user:
         user = user_with_username
 
-    hashed_pwd = hash_password(data.temporary_password)
-
     if user:
-        # Update existing user account
+        # Update existing user account: PRESERVE existing password!
+        # Do not overwrite password_hash or reset must_change_password.
         user.username = username
-        user.password_hash = hashed_pwd
         user.role = role
         user.is_active = True
-        user.must_change_password = True
         if data.name:
             user.name = data.name.strip()
         if data.phone:
@@ -407,7 +414,13 @@ def set_employee_credentials(
         if clean_email:
             user.email = clean_email
     else:
-        # Create new user account
+        # Create new user account for the first time
+        if not data.temporary_password or len(data.temporary_password) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Temporary password must be at least 6 characters long for new accounts"
+            )
+        hashed_pwd = hash_password(data.temporary_password)
         target_email = clean_email or f"{username}@hospital.com"
         existing_email_user = db.query(User).filter(User.email == target_email).first()
         if existing_email_user:
@@ -427,23 +440,9 @@ def set_employee_credentials(
 
     db.flush()
 
-    # Link user_id to the specific workforce profile
-    try:
-        emp_id = int(data.employee_id)
-        if role == "doctor":
-            doc = db.query(Doctor).filter(Doctor.id == emp_id).first()
-            if doc:
-                doc.user_id = user.id
-        elif role == "nurse":
-            nurse = db.query(Nurse).filter(Nurse.id == emp_id).first()
-            if nurse:
-                nurse.user_id = user.id
-        elif role == "staff":
-            staff = db.query(Staff).filter(Staff.id == emp_id).first()
-            if staff:
-                staff.user_id = user.id
-    except (ValueError, TypeError):
-        pass
+    # Link user_id to the specific workforce profile if available
+    if employee_obj:
+        employee_obj.user_id = user.id
 
     db.commit()
     db.refresh(user)
@@ -453,5 +452,5 @@ def set_employee_credentials(
         "username": username,
         "role": role,
         "user_id": user.id,
-        "must_change_password": True
+        "must_change_password": user.must_change_password
     }

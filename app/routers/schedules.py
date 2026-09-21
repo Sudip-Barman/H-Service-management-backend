@@ -1,3 +1,4 @@
+from datetime import date as dt_date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,7 @@ from app.models.doctor import Doctor
 from app.models.schedule import Schedule
 from app.models.staff import Staff
 from app.schemas.schedule import ScheduleCreate, ScheduleResponse, ScheduleUpdate
+from app.services.notification_service import create_targeted_notification
 
 router = APIRouter(
     prefix="/api/schedules",
@@ -31,6 +33,30 @@ def _format_schedule(s: Schedule) -> dict:
     }
 
 
+def _notify_doctor_schedule(schedule: Schedule, action: str, db: Session):
+    if not schedule.doctor_id:
+        return
+    doc = db.query(Doctor).filter(Doctor.id == schedule.doctor_id).first()
+    if not doc or not doc.user_id:
+        return
+    title = "New Schedule Assigned" if action == "create" else "Schedule Updated"
+    msg = f"Your schedule for {schedule.date} ({schedule.start_time} - {schedule.end_time}) at {schedule.location or 'Hospital'} has been {action}d."
+    create_targeted_notification(
+        db=db,
+        title=title,
+        message=msg,
+        recipient_user_id=doc.user_id,
+        recipient_role="doctor",
+        notif_type="schedule_changed",
+        priority="Normal",
+        department=schedule.department or "Clinical",
+        recipient=f"Dr. {doc.first_name} {doc.last_name or ''}".strip(),
+        related_entity_type="schedule",
+        related_entity_id=schedule.id,
+        action_url="/workforce/schedule",
+    )
+
+
 @router.get("")
 def get_schedules(db: Session = Depends(get_db)):
     schedules = db.query(Schedule).order_by(Schedule.date.asc(), Schedule.start_time.asc()).all()
@@ -42,7 +68,6 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
     department = data.department
     doctor_name = data.doctor_name
 
-    # If doctor_id is supplied, ensure department and name are synced
     if data.doctor_id:
         doc = db.query(Doctor).filter(Doctor.id == data.doctor_id).first()
         if doc:
@@ -54,7 +79,6 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
                 doctor_name = staff.name
                 department = getattr(staff, "department", department)
 
-    from datetime import date as dt_date
     sched_date = data.start_date or data.date or dt_date.today()
 
     schedule = Schedule(
@@ -71,6 +95,10 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
         status=data.status
     )
     db.add(schedule)
+    db.flush()
+
+    _notify_doctor_schedule(schedule, "create", db)
+
     db.commit()
     db.refresh(schedule)
     return _format_schedule(schedule)
@@ -87,6 +115,8 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
 
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(schedule, field, value)
+
+    _notify_doctor_schedule(schedule, "update", db)
 
     db.commit()
     db.refresh(schedule)
