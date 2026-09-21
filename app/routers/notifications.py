@@ -54,6 +54,14 @@ def create_notification(data: NotificationCreate, db: Session = Depends(get_db))
     return _format_notification(notif)
 
 
+@router.put("/mark-all-read")
+@router.post("/mark-all-read")
+def mark_all_read(db: Session = Depends(get_db)):
+    db.query(Notification).filter(Notification.read == False).update({"read": True})
+    db.commit()
+    return {"message": "All notifications marked as read"}
+
+
 @router.put("/{notification_id}")
 def update_notification(notification_id: int, data: NotificationUpdate, db: Session = Depends(get_db)):
     notif = db.query(Notification).filter(Notification.id == notification_id).first()
@@ -69,13 +77,6 @@ def update_notification(notification_id: int, data: NotificationUpdate, db: Sess
     db.commit()
     db.refresh(notif)
     return _format_notification(notif)
-
-
-@router.put("/mark-all-read")
-def mark_all_read(db: Session = Depends(get_db)):
-    db.query(Notification).filter(Notification.read == False).update({"read": True})
-    db.commit()
-    return {"message": "All notifications marked as read"}
 
 
 @router.put("/{notification_id}/read")
