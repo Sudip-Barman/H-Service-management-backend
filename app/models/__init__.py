@@ -10,7 +10,6 @@ from app.models.admission import Admission
 from app.models.schedule import Schedule
 from app.models.shift import StaffShift
 from app.models.attendance import Attendance
-from app.models.blood_bank import BloodStock
 from app.models.medicine import Medicine
 from app.models.emergency import EmergencyPatient
 from app.models.inventory import InventoryItem
@@ -36,7 +35,6 @@ __all__ = [
     "Schedule",
     "StaffShift",
     "Attendance",
-    "BloodStock",
     "Medicine",
     "EmergencyPatient",
     "InventoryItem",

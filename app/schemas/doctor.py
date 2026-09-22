@@ -1,5 +1,6 @@
 from datetime import date
 from pydantic import BaseModel, ConfigDict, field_validator
+from app.utils.validation import validate_phone_number
 
 
 class DoctorCreate(BaseModel):
@@ -22,11 +23,23 @@ class DoctorCreate(BaseModel):
     available_status: str = "Available"
     status: str = "Active"
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return validate_phone_number(v, "Phone number")
+
     @field_validator("date_of_birth", "license_expiry", mode="before")
     @classmethod
     def empty_str_to_none_date(cls, v):
         if v == "" or v is None:
             return None
+        return v
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_doctor_dob(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError("Date of Birth cannot be greater than today's date.")
         return v
 
     @field_validator("experience_years", "consultation_fee", mode="before")
@@ -57,11 +70,25 @@ class DoctorUpdate(BaseModel):
     available_status: str | None = None
     status: str | None = None
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            return validate_phone_number(v, "Phone number")
+        return None
+
     @field_validator("date_of_birth", "license_expiry", mode="before")
     @classmethod
     def empty_str_to_none_date(cls, v):
         if v == "" or v is None:
             return None
+        return v
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_doctor_dob(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError("Date of Birth cannot be greater than today's date.")
         return v
 
     @field_validator("experience_years", "consultation_fee", mode="before")

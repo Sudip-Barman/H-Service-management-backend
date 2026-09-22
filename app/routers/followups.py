@@ -12,6 +12,14 @@ router = APIRouter(
 )
 
 
+from datetime import date, datetime
+from app.services.notification_service import (
+    advance_recurring_followup,
+    create_targeted_notification,
+    sync_followup_reminders,
+)
+
+
 def _format_followup(f: FollowUp) -> dict:
     return {
         "id": f.follow_up_code or f"FU-{1000 + f.id}",
@@ -33,6 +41,12 @@ def _format_followup(f: FollowUp) -> dict:
         "notes": f.notes or "",
         "nextAction": f.next_action or "",
         "status": f.status,
+        "notification_sent": f.notification_sent,
+        "triggered_at": f.triggered_at.isoformat() if f.triggered_at else None,
+        "last_notification_date": str(f.last_notification_date) if f.last_notification_date else None,
+        "is_recurring": f.is_recurring,
+        "recurrence_interval": f.recurrence_interval,
+        "recurrence_end_date": str(f.recurrence_end_date) if f.recurrence_end_date else None,
         "createdAt": str(f.created_at.date()) if f.created_at else "",
     }
 
@@ -43,8 +57,13 @@ def get_followups(db: Session = Depends(get_db)):
     return [_format_followup(f) for f in items]
 
 
-from datetime import date
-from app.services.notification_service import create_system_notification
+@router.post("/sync-reminders")
+def sync_reminders(db: Session = Depends(get_db)):
+    """
+    Triggers check for due reminders and generates notifications exactly once.
+    """
+    count = sync_followup_reminders(db)
+    return {"status": "success", "synced_count": count}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -79,32 +98,59 @@ def create_followup(data: FollowUpCreate, db: Session = Depends(get_db)):
         notes=data.notes,
         next_action=data.next_action,
         status=data.status,
+        is_recurring=data.is_recurring,
+        recurrence_interval=data.recurrence_interval,
+        recurrence_end_date=data.recurrence_end_date,
+        notification_sent=False,
     )
     db.add(fu)
+    db.flush()
 
     # Automated Notification Trigger
     today = date.today()
     ref_code = fu.follow_up_code or "FU"
     if fu.follow_up_date and fu.follow_up_date <= today:
-        create_system_notification(
+        priority_val = "Urgent" if fu.priority in ["High", "Urgent"] else "Normal"
+        due_label = "today" if fu.follow_up_date == today else f"on {fu.follow_up_date} (Overdue)"
+        scheduled_date_for_this_occurrence = fu.follow_up_date
+
+        create_targeted_notification(
             db=db,
             title=f"Follow-Up Reminder: {fu.name}",
-            message=f"Follow-up {ref_code} for patient {fu.name} is scheduled for today ({fu.follow_up_date}). Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
+            message=f"Follow-up {ref_code} for patient {fu.name} is scheduled {due_label}. Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
+            recipient_role="admin",
             notif_type="Follow-up",
-            priority="Urgent" if fu.priority in ["High", "Urgent"] else "Normal",
+            priority=priority_val,
             department="Reception",
-            recipient=fu.assigned_to or "All Reception Staff",
+            recipient=fu.assigned_to or "Administration & Reception",
+            related_entity_type="followup",
+            related_entity_id=fu.id,
+            action_url="/admin/follow-up",
         )
+
+        fu.notification_sent = True
+        fu.last_notification_date = scheduled_date_for_this_occurrence
+        fu.triggered_at = datetime.utcnow()
+
+        if fu.is_recurring:
+            advance_recurring_followup(fu, base_date=scheduled_date_for_this_occurrence)
     else:
-        create_system_notification(
+        create_targeted_notification(
             db=db,
             title=f"New Follow-Up Scheduled: {fu.name}",
             message=f"Follow-up {ref_code} scheduled for {fu.name} on {fu.follow_up_date}. Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
+            recipient_role="admin",
             notif_type="Follow-up",
             priority="Normal",
             department="Reception",
-            recipient=fu.assigned_to or "All Reception Staff",
+            recipient=fu.assigned_to or "Administration & Reception",
+            related_entity_type="followup",
+            related_entity_id=fu.id,
+            action_url="/admin/follow-up",
         )
+        fu.notification_sent = False
+        fu.last_notification_date = None
+        fu.triggered_at = None
 
     db.commit()
     db.refresh(fu)
@@ -122,8 +168,21 @@ def update_followup(followup_id: str, data: FollowUpUpdate, db: Session = Depend
             detail="Follow-up record not found"
         )
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    prev_date = fu.follow_up_date
+    update_data = data.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
         setattr(fu, field, value)
+
+    # If the user changed follow_up_date to a new date, handle notification_sent state
+    if "follow_up_date" in update_data and update_data["follow_up_date"] != prev_date:
+        new_date = update_data["follow_up_date"]
+        if new_date > date.today():
+            fu.notification_sent = False
+            fu.triggered_at = None
+        elif new_date <= date.today():
+            if fu.last_notification_date != new_date:
+                fu.notification_sent = False
 
     db.commit()
     db.refresh(fu)
@@ -144,3 +203,4 @@ def delete_followup(followup_id: str, db: Session = Depends(get_db)):
     db.delete(fu)
     db.commit()
     return {"message": "Follow-up deleted successfully"}
+

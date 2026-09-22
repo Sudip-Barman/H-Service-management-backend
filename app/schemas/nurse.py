@@ -1,5 +1,6 @@
 from datetime import date
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+from app.utils.validation import validate_phone_number
 
 
 class NurseCreate(BaseModel):
@@ -24,6 +25,25 @@ class NurseCreate(BaseModel):
     username: str | None = None
     temporary_password: str | None = None
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return validate_phone_number(v, "Phone number")
+
+    @field_validator("date_of_birth", "license_expiry", mode="before")
+    @classmethod
+    def empty_str_to_none_date(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_nurse_dob(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError("Date of Birth cannot be greater than today's date.")
+        return v
+
 
 class NurseUpdate(BaseModel):
     registration_number: str | None = None
@@ -46,6 +66,27 @@ class NurseUpdate(BaseModel):
     status: str | None = None
     username: str | None = None
     temporary_password: str | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            return validate_phone_number(v, "Phone number")
+        return None
+
+    @field_validator("date_of_birth", "license_expiry", mode="before")
+    @classmethod
+    def empty_str_to_none_date(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_nurse_dob(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError("Date of Birth cannot be greater than today's date.")
+        return v
 
 
 class NurseResponse(BaseModel):

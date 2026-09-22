@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.nurse import Nurse
 from app.schemas.nurse import NurseCreate, NurseResponse, NurseUpdate
+from app.utils.validation import validate_dob
 
 router = APIRouter(
     prefix="/api/nurses",
@@ -42,6 +43,15 @@ from app.services.notification_service import create_system_notification
 
 @router.post("", response_model=NurseResponse, status_code=status.HTTP_201_CREATED)
 def create_nurse(data: NurseCreate, db: Session = Depends(get_db)):
+    if data.date_of_birth is not None:
+        try:
+            validate_dob(data.date_of_birth, is_staff=True, db=db)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            )
+
     existing = db.query(Nurse).filter(
         Nurse.registration_number == data.registration_number
     ).first()
@@ -142,6 +152,15 @@ def update_nurse(nurse_id: int, data: NurseUpdate, db: Session = Depends(get_db)
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nurse not found"
         )
+
+    if data.date_of_birth is not None:
+        try:
+            validate_dob(data.date_of_birth, is_staff=True, db=db)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            )
 
     update_dict = data.model_dump(exclude_unset=True)
     username = update_dict.pop("username", None)

@@ -37,6 +37,9 @@ def _format_notification(n: Notification) -> dict:
     }
 
 
+from app.services.notification_service import sync_followup_reminders
+
+
 @router.get("")
 def get_notifications(
     current_user: User = Depends(get_current_user),
@@ -46,9 +49,14 @@ def get_notifications(
     Returns notifications strictly belonging to the currently authenticated user.
     Admin receives Admin-targeted and system notifications.
     Doctors, Nurses, and Staff only receive notifications matching their user ID.
-    No automatic database mutations on GET.
+    Synchronizes pending reminder occurrences exactly once with persistent state tracking.
     """
     if current_user.role == "admin":
+        try:
+            sync_followup_reminders(db)
+        except Exception:
+            pass
+
         notifications = (
             db.query(Notification)
             .filter(
@@ -68,6 +76,19 @@ def get_notifications(
         )
 
     return [_format_notification(n) for n in notifications]
+
+
+@router.post("/sync-reminders")
+def sync_notifications_reminders(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Explicitly checks and triggers pending reminders for today exactly once.
+    """
+    count = sync_followup_reminders(db)
+    return {"status": "success", "synced_count": count}
+
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

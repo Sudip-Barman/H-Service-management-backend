@@ -111,57 +111,100 @@ def create_system_notification(
     )
 
 
+def advance_recurring_followup(fu: FollowUp, base_date: date | None = None) -> date | None:
+    """
+    Advances a recurring follow-up to its next scheduled occurrence date.
+    Returns the next date, or None if recurrence has expired.
+    """
+    if not fu.is_recurring:
+        return None
+
+    interval = (fu.recurrence_interval or "Daily").strip().capitalize()
+    ref = base_date or fu.follow_up_date or date.today()
+    if ref < date.today():
+        ref = date.today()
+
+    if interval == "Daily":
+        next_date = ref + timedelta(days=1)
+    elif interval == "Weekly":
+        next_date = ref + timedelta(weeks=1)
+    elif interval == "Monthly":
+        next_date = ref + timedelta(days=30)
+    else:
+        next_date = ref + timedelta(days=1)
+
+    if fu.recurrence_end_date and next_date > fu.recurrence_end_date:
+        fu.is_recurring = False
+        return None
+
+    fu.follow_up_date = next_date
+    fu.notification_sent = False
+    return next_date
+
+
 def sync_followup_reminders(db: Session) -> int:
     """
     Checks for any pending/active follow-ups whose follow_up_date is today or earlier,
     and creates a reminder notification if one has not already been created for today.
-    Targeted to Admin/Reception so workforce doctors/nurses don't see raw follow-up reminders.
+    Uses persistent database tracking on FollowUp (notification_sent, last_notification_date, triggered_at).
+    Deleting or dismissing a notification will NEVER recreate it.
     """
     today = date.today()
-    today_str = today.strftime("%Y-%m-%d")
+    now = datetime.utcnow()
 
+    # Query only active follow-ups due today or earlier that have NOT yet been notified for their current scheduled date
     active_followups = (
         db.query(FollowUp)
         .filter(
             FollowUp.follow_up_date <= today,
             ~FollowUp.status.in_(["Completed", "Cancelled", "Closed", "Done"]),
+            (
+                (FollowUp.notification_sent == False)
+                | (FollowUp.last_notification_date != FollowUp.follow_up_date)
+                | (FollowUp.last_notification_date == None)
+            ),
         )
         .all()
     )
 
     created_count = 0
     for fu in active_followups:
+        # Extra safety check: if already triggered for this specific follow_up_date, skip
+        if fu.notification_sent and fu.last_notification_date == fu.follow_up_date:
+            continue
+
         ref_code = fu.follow_up_code or f"FU-{fu.id}"
-        existing = (
-            db.query(Notification)
-            .filter(
-                Notification.type == "Follow-up",
-                Notification.date == today_str,
-                Notification.message.like(f"%{ref_code}%"),
-            )
-            .first()
+        priority_val = "Urgent" if fu.priority in ["High", "Urgent"] else "Normal"
+        due_label = "today" if fu.follow_up_date == today else f"on {fu.follow_up_date} (Overdue)"
+        scheduled_date_for_this_occurrence = fu.follow_up_date
+
+        create_targeted_notification(
+            db=db,
+            title=f"Follow-Up Reminder: {fu.name}",
+            message=f"Follow-up {ref_code} for patient {fu.name} is scheduled {due_label}. Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
+            recipient_role="admin",
+            notif_type="Follow-up",
+            priority=priority_val,
+            department="Reception",
+            recipient=fu.assigned_to or "Administration & Reception",
+            related_entity_type="followup",
+            related_entity_id=fu.id,
+            action_url="/admin/follow-up",
         )
 
-        if not existing:
-            priority_val = "Urgent" if fu.priority in ["High", "Urgent"] else "Normal"
-            due_label = "today" if fu.follow_up_date == today else f"on {fu.follow_up_date} (Overdue)"
+        # Mark persistently as triggered for this scheduled occurrence
+        fu.notification_sent = True
+        fu.last_notification_date = scheduled_date_for_this_occurrence
+        fu.triggered_at = now
 
-            create_targeted_notification(
-                db=db,
-                title=f"Follow-Up Reminder: {fu.name}",
-                message=f"Follow-up {ref_code} for patient {fu.name} is scheduled {due_label}. Purpose: {fu.query or fu.followup_type or 'Check-up'}. Assigned to: {fu.assigned_to or 'Reception'}.",
-                recipient_role="admin",
-                notif_type="Follow-up",
-                priority=priority_val,
-                department="Reception",
-                recipient=fu.assigned_to or "Administration & Reception",
-                related_entity_type="followup",
-                related_entity_id=fu.id,
-                action_url="/admin/follow-up",
-            )
-            created_count += 1
+        # If recurring, advance to next occurrence date
+        if fu.is_recurring:
+            advance_recurring_followup(fu, base_date=scheduled_date_for_this_occurrence)
+
+        created_count += 1
 
     if created_count > 0:
         db.commit()
 
     return created_count
+

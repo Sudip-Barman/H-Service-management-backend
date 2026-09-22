@@ -34,6 +34,10 @@ DEFAULT_SETTINGS = {
     "shiftReminders": True,
     "taskAlerts": True,
     "theme": "light",
+    "minPatientAge": 0,
+    "maxPatientAge": 125,
+    "minStaffAge": 18,
+    "maxStaffAge": 75,
 }
 
 

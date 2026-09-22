@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admission import Admission
-from app.models.blood_bank import BloodStock
 from app.models.booking import Booking
 from app.models.doctor import Doctor
 from app.models.emergency import EmergencyPatient
@@ -155,7 +154,6 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     # 4. Open Alerts
     er_requests = db.query(EmergencyPatient).filter(EmergencyPatient.triage.in_(["Immediate", "Very Urgent", "Urgent", "Red", "Yellow"])).count()
     low_meds = db.query(Medicine).filter(Medicine.quantity <= Medicine.reorder_level).count()
-    low_blood = db.query(BloodStock).filter(BloodStock.units <= BloodStock.min_stock).count()
     pending_req = db.query(HospitalRequest).filter(HospitalRequest.status == "Pending").count()
 
     return {
@@ -172,7 +170,6 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         "alerts": {
             "emergency_requests": er_requests,
             "medicine_restock": low_meds,
-            "low_blood_stock": low_blood,
             "pending_requests": pending_req,
         }
     }

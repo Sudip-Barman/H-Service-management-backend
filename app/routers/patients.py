@@ -16,6 +16,7 @@ from app.schemas.patient import (
 )
 from app.services.billing_service import generate_bill_for_patient
 from app.services.notification_service import create_system_notification
+from app.utils.validation import validate_dob
 
 
 router = APIRouter(
@@ -234,6 +235,12 @@ def create_patient(
     Registration number is automatically generated.
     """
 
+    if patient_data.date_of_birth is not None:
+        try:
+            validate_dob(patient_data.date_of_birth, is_staff=False, db=db)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
     services_val = patient_data.services
     if isinstance(services_val, (list, dict)):
         services_val = json.dumps(services_val)
@@ -434,6 +441,12 @@ def update_patient(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Patient not found."
         )
+
+    if patient_data.date_of_birth is not None:
+        try:
+            validate_dob(patient_data.date_of_birth, is_staff=False, db=db)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
     update_data = patient_data.model_dump(
         exclude_unset=True

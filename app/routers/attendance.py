@@ -42,9 +42,14 @@ def get_attendance(target_date: Optional[date] = None, db: Session = Depends(get
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def mark_attendance(data: AttendanceCreate, db: Session = Depends(get_db)):
-    # Check if existing record exists for this staff on this date
+    # Check if existing record exists for this workforce member on this date
     existing = None
-    if data.staff_id:
+    if data.employee_id:
+        existing = db.query(Attendance).filter(
+            Attendance.employee_id == data.employee_id,
+            Attendance.date == data.date
+        ).first()
+    elif data.staff_id:
         existing = db.query(Attendance).filter(
             Attendance.staff_id == data.staff_id,
             Attendance.date == data.date
@@ -52,12 +57,18 @@ def mark_attendance(data: AttendanceCreate, db: Session = Depends(get_db)):
 
     if existing:
         existing.status = data.status
-        if data.check_in:
+        if data.check_in is not None:
             existing.check_in = data.check_in
-        if data.check_out:
+        if data.check_out is not None:
             existing.check_out = data.check_out
         if data.shift:
             existing.shift = data.shift
+        if data.staff_name:
+            existing.staff_name = data.staff_name
+        if data.role:
+            existing.role = data.role
+        if data.department:
+            existing.department = data.department
         db.commit()
         db.refresh(existing)
         return _format_attendance(existing)

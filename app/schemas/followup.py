@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict
 
 
@@ -18,6 +18,9 @@ class FollowUpCreate(BaseModel):
     notes: str | None = None
     next_action: str | None = None
     status: str = "Follow-up Required"
+    is_recurring: bool = False
+    recurrence_interval: str | None = None
+    recurrence_end_date: date | None = None
 
 
 class FollowUpUpdate(BaseModel):
@@ -35,6 +38,10 @@ class FollowUpUpdate(BaseModel):
     notes: str | None = None
     next_action: str | None = None
     status: str | None = None
+    notification_sent: bool | None = None
+    is_recurring: bool | None = None
+    recurrence_interval: str | None = None
+    recurrence_end_date: date | None = None
 
 
 class FollowUpResponse(BaseModel):
@@ -54,5 +61,12 @@ class FollowUpResponse(BaseModel):
     notes: str | None
     next_action: str | None
     status: str
+    notification_sent: bool = False
+    triggered_at: datetime | None = None
+    last_notification_date: date | None = None
+    is_recurring: bool = False
+    recurrence_interval: str | None = None
+    recurrence_end_date: date | None = None
 
     model_config = ConfigDict(from_attributes=True)
+

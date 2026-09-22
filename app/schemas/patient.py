@@ -1,7 +1,8 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.utils.validation import validate_phone_number
 
 
 # =========================================================
@@ -124,6 +125,25 @@ class PatientCreate(BaseModel):
 
     digital_signature: str | None = None
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return validate_phone_number(v, "Phone number")
+
+    @field_validator("emergency_contact_phone")
+    @classmethod
+    def validate_emergency_phone(cls, v: str | None) -> str | None:
+        if v:
+            return validate_phone_number(v, "Emergency contact phone")
+        return None
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_patient_dob(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError("Date of Birth cannot be greater than today's date.")
+        return v
+
 
 # =========================================================
 # PATIENT UPDATE
@@ -243,6 +263,27 @@ class PatientUpdate(BaseModel):
     services: Any = None
 
     digital_signature: str | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            return validate_phone_number(v, "Phone number")
+        return None
+
+    @field_validator("emergency_contact_phone")
+    @classmethod
+    def validate_emergency_phone(cls, v: str | None) -> str | None:
+        if v:
+            return validate_phone_number(v, "Emergency contact phone")
+        return None
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def validate_patient_dob(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError("Date of Birth cannot be greater than today's date.")
+        return v
 
 
 # =========================================================

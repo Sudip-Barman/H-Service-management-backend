@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from sqlalchemy import Date, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -98,7 +98,40 @@ class FollowUp(Base):
         nullable=False
     )
 
+    notification_sent: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
+
+    triggered_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
+
+    last_notification_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True
+    )
+
+    is_recurring: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
+
+    recurrence_interval: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+    )
+
+    recurrence_end_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow
     )
+

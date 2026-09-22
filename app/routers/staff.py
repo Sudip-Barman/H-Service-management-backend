@@ -62,6 +62,7 @@ def get_staff_member(
 
 from app.core.security import hash_password
 from app.services.notification_service import create_system_notification
+from app.utils.validation import validate_dob
 
 
 @router.post(
@@ -73,6 +74,15 @@ def create_staff(
     staff_data: StaffCreate,
     db: Session = Depends(get_db)
 ):
+    if staff_data.date_of_birth is not None:
+        try:
+            validate_dob(staff_data.date_of_birth, is_staff=True, db=db)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            )
+
     clean_username = staff_data.username.strip().lower() if staff_data.username and staff_data.username.strip() else None
     if clean_username:
         if len(clean_username) < 3:
@@ -183,6 +193,15 @@ def update_staff(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Staff member not found"
         )
+
+    if staff_data.date_of_birth is not None:
+        try:
+            validate_dob(staff_data.date_of_birth, is_staff=True, db=db)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            )
 
     update_dict = staff_data.model_dump(exclude_unset=True)
     username = update_dict.pop("username", None)

@@ -22,6 +22,7 @@ from app.models.doctor import Doctor
 from app.models.user import User
 from app.schemas.doctor import DoctorResponse
 from app.core.security import hash_password
+from app.utils.validation import validate_phone_number, validate_dob
 
 
 router = APIRouter(
@@ -294,6 +295,18 @@ def create_doctor(
         )
 
     # ------------------------------------------------------------------------
+    # Validate phone and DOB
+    # ------------------------------------------------------------------------
+
+    try:
+        phone = validate_phone_number(phone, "Phone number")
+    except ValueError as err:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(err),
+        )
+
+    # ------------------------------------------------------------------------
     # Parse dates
     # ------------------------------------------------------------------------
 
@@ -308,6 +321,14 @@ def create_doctor(
             raise HTTPException(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date_of_birth. Expected YYYY-MM-DD.",
+            )
+
+        try:
+            validate_dob(parsed_dob, is_staff=True, db=db)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
             )
 
     parsed_license_expiry = None
@@ -504,21 +525,39 @@ def update_doctor(
         doctor.last_name = last_name
 
     if date_of_birth is not None:
-        from datetime import date
+        if date_of_birth.strip():
+            from datetime import date
 
-        try:
-            doctor.date_of_birth = date.fromisoformat(date_of_birth)
-        except ValueError:
-            raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date_of_birth. Expected YYYY-MM-DD.",
-            )
+            try:
+                parsed_dob = date.fromisoformat(date_of_birth.strip())
+            except ValueError:
+                raise HTTPException(
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date_of_birth. Expected YYYY-MM-DD.",
+                )
+
+            try:
+                validate_dob(parsed_dob, is_staff=True, db=db)
+            except ValueError as err:
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(err),
+                )
+            doctor.date_of_birth = parsed_dob
+        else:
+            doctor.date_of_birth = None
 
     if gender is not None:
         doctor.gender = gender
 
     if phone is not None:
-        doctor.phone = phone
+        try:
+            doctor.phone = validate_phone_number(phone, "Phone number")
+        except ValueError as err:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(err),
+            )
 
     if email is not None:
         doctor.email = email

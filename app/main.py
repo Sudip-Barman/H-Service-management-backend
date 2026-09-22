@@ -19,7 +19,6 @@ from app.routers.admissions import router as admissions_router
 from app.routers.schedules import router as schedules_router
 from app.routers.shifts import router as shifts_router
 from app.routers.attendance import router as attendance_router
-from app.routers.blood_bank import router as blood_bank_router
 from app.routers.medicines import router as medicines_router
 from app.routers.emergency import router as emergency_router
 from app.routers.inventory import router as inventory_router
@@ -31,13 +30,15 @@ from app.routers.feedback import router as feedback_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.settings import router as settings_router
 from app.routers.assets import router as assets_router
-from app.seed_data import seed
 
 Base.metadata.create_all(bind=engine)
+
 try:
-    seed()
-except Exception:
-    pass
+    from app.migrate_reminders import run_migration
+    run_migration()
+except Exception as e:
+    print(f"[STARTUP] Reminder migration note: {e}")
+
 
 app = FastAPI(
     title="Hospital Management System API",
@@ -87,7 +88,6 @@ app.include_router(admissions_router)
 app.include_router(schedules_router)
 app.include_router(shifts_router)
 app.include_router(attendance_router)
-app.include_router(blood_bank_router)
 app.include_router(medicines_router)
 app.include_router(emergency_router)
 app.include_router(inventory_router)
