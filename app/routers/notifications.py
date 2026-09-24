@@ -63,13 +63,21 @@ def get_notifications(
             .all()
         )
     else:
+        # Workforce users (Doctor, Nurse, Staff): Exclude all new registration events (Patient, Doctor, Nurse, Staff)
         notifications = (
             db.query(Notification)
             .filter(
-                (Notification.recipient_user_id == current_user.id)
-                | (Notification.recipient_role == current_user.role)
-                | (Notification.recipient_role == "all_staff")
-                | (Notification.recipient_user_id == None)
+                (
+                    (Notification.recipient_user_id == current_user.id)
+                    | (Notification.recipient_role == current_user.role)
+                    | (Notification.recipient_role == "all_staff")
+                    | (
+                        (Notification.recipient_user_id == None)
+                        & (Notification.recipient_role != "admin")
+                    )
+                ),
+                Notification.recipient_role != "admin",
+                ~Notification.title.ilike("%Registered%"),
             )
             .order_by(Notification.id.desc())
             .all()

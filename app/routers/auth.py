@@ -26,6 +26,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.dependencies import get_current_user, require_admin
+from app.services.notification_service import create_system_notification
 
 router = APIRouter(
     prefix="/api/auth",
@@ -245,6 +246,42 @@ def register(
     )
 
     db.add(new_user)
+
+    # Automated Notification Trigger if doctor or nurse registers -> strictly for Administration
+    try:
+        if safe_role == "doctor":
+            create_system_notification(
+                db=db,
+                title=f"New Doctor Account Registered: Dr. {new_user.name}",
+                message=f"Dr. {new_user.name} ({new_user.email}) has registered an account.",
+                notif_type="Staff",
+                priority="Normal",
+                department="Medical",
+                recipient="Administration",
+                recipient_role="admin",
+                recipient_user_id=None,
+                related_entity_type="user",
+                related_entity_id=new_user.id,
+                action_url="/admin/doctors",
+            )
+        elif safe_role == "nurse":
+            create_system_notification(
+                db=db,
+                title=f"New Nurse Account Registered: {new_user.name}",
+                message=f"Nurse {new_user.name} ({new_user.email}) has registered an account.",
+                notif_type="Staff",
+                priority="Normal",
+                department="Nursing",
+                recipient="Administration",
+                recipient_role="admin",
+                recipient_user_id=None,
+                related_entity_type="user",
+                related_entity_id=new_user.id,
+                action_url="/admin/staff",
+            )
+    except Exception as notif_err:
+        print(f"[NOTIFICATION] Warning: {notif_err}")
+
     db.commit()
     db.refresh(new_user)
 

@@ -118,7 +118,7 @@ def create_staff(
 
     db.add(new_staff)
 
-    # Automated Notification Trigger
+    # Automated Notification Trigger -> strictly for Administration
     create_system_notification(
         db=db,
         title=f"New Staff Registered: {new_staff.name}",
@@ -126,7 +126,12 @@ def create_staff(
         notif_type="Staff",
         priority="Normal",
         department="Human Resources",
-        recipient="All Hospital Staff",
+        recipient="Administration",
+        recipient_role="admin",
+        recipient_user_id=None,
+        related_entity_type="staff",
+        related_entity_id=new_staff.id,
+        action_url="/admin/staff",
     )
 
     db.commit()

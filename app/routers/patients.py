@@ -306,7 +306,7 @@ def create_patient(
         try:
             db.add(patient)
 
-            # Automated Notification Trigger
+            # Automated Notification Trigger -> strictly for Administration
             patient_full_name = f"{patient.first_name} {patient.last_name or ''}".strip()
             create_system_notification(
                 db=db,
@@ -315,7 +315,12 @@ def create_patient(
                 notif_type="Patients",
                 priority="Normal",
                 department="OPD",
-                recipient="Reception & Clinical Staff",
+                recipient="Administration",
+                recipient_role="admin",
+                recipient_user_id=None,
+                related_entity_type="patient",
+                related_entity_id=patient.id,
+                action_url="/admin/patients",
             )
 
             # Automated Billing Generation

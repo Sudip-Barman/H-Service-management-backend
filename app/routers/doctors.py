@@ -22,6 +22,10 @@ from app.models.doctor import Doctor
 from app.models.user import User
 from app.schemas.doctor import DoctorResponse
 from app.core.security import hash_password
+from app.services.notification_service import (
+    create_system_notification,
+    create_targeted_notification,
+)
 from app.utils.validation import validate_phone_number, validate_dob
 
 
@@ -423,6 +427,26 @@ def create_doctor(
         db.flush()
 
         doctor.user_id = user_account.id
+
+        # Automated Notification Trigger -> strictly for Administration
+        try:
+            create_system_notification(
+                db=db,
+                title=f"New Doctor Registered: {doc_full_name}",
+                message=f"{doc_full_name} ({doctor.registration_number}) has been registered in department {doctor.department or 'Medical'} with specialization in {doctor.specialization or 'General Medicine'}.",
+                notif_type="Staff",
+                priority="Normal",
+                department=doctor.department or "Medical",
+                recipient="Administration",
+                recipient_role="admin",
+                recipient_user_id=None,
+                related_entity_type="doctor",
+                related_entity_id=doctor.id,
+                action_url="/admin/doctors",
+            )
+        except Exception as notif_err:
+            print(f"[NOTIFICATION] Warning: Could not create doctor registration notification: {notif_err}")
+
         db.commit()
         db.refresh(doctor)
         doctor.username = user_account.username
