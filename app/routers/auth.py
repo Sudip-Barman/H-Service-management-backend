@@ -1,4 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import base64
+import uuid
+from io import BytesIO
+from pathlib import Path
+from PIL import Image
+
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -25,6 +31,81 @@ router = APIRouter(
     prefix="/api/auth",
     tags=["Authentication"]
 )
+
+# Avatar storage directory matching doctor/nurse architecture
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+AVATARS_DIR = BASE_DIR / "uploads" / "avatars"
+AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg",
+    "image/jpg",
+    "image/pjpeg",
+    "image/png",
+    "image/x-png",
+    "image/webp",
+}
+
+
+def process_and_save_avatar_image(image_bytes: bytes) -> str:
+    """
+    Validate, resize, convert to WebP, and save an avatar image to disk.
+    Matches the architecture of doctor and nurse image storage.
+    Returns relative URL path stored in the database.
+    """
+    if len(image_bytes) > MAX_AVATAR_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Avatar image must be less than 5 MB.",
+        )
+
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        image.verify()
+        image = Image.open(BytesIO(image_bytes))
+
+        if image.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", image.size, "white")
+            if image.mode == "P":
+                image = image.convert("RGBA")
+            background.paste(
+                image,
+                mask=image.getchannel("A") if image.mode == "RGBA" else None,
+            )
+            image = background
+        else:
+            image = image.convert("RGB")
+
+        image.thumbnail((512, 512), Image.Resampling.LANCZOS)
+        filename = f"{uuid.uuid4().hex}.webp"
+        file_path = AVATARS_DIR / filename
+
+        image.save(
+            file_path,
+            format="WEBP",
+            quality=85,
+            method=6,
+        )
+        return f"/uploads/avatars/{filename}"
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or corrupted image file.",
+        )
+
+
+def delete_avatar_file(avatar_path: str | None) -> None:
+    """Delete an existing avatar file from disk if it resides in /uploads/avatars/."""
+    if not avatar_path or not avatar_path.startswith("/uploads/avatars/"):
+        return
+    try:
+        filename = Path(avatar_path).name
+        file_path = AVATARS_DIR / filename
+        if file_path.exists() and file_path.is_file():
+            file_path.unlink()
+    except Exception:
+        pass
 
 
 def get_user_profile(user: User, db: Session) -> dict | None:
@@ -100,6 +181,7 @@ def get_user_profile(user: User, db: Session) -> dict | None:
                 "qualification": st.qualification,
                 "experience": st.experience,
                 "joining_date": str(st.joining_date) if st.joining_date else None,
+                "photo": user.avatar,
                 "status": st.status,
             }
     return None
@@ -108,13 +190,14 @@ def get_user_profile(user: User, db: Session) -> dict | None:
 def serialize_user_with_profile(user: User, db: Session) -> UserResponse:
     """Helper to convert User model into UserResponse with attached profile."""
     profile_data = get_user_profile(user, db)
+    photo_from_prof = profile_data.get("photo") if profile_data else None
     return UserResponse(
         id=user.id,
         name=user.name,
         username=user.username,
         email=user.email,
         phone=user.phone,
-        avatar=user.avatar,
+        avatar=user.avatar or photo_from_prof,
         role=user.role,
         is_active=user.is_active,
         must_change_password=user.must_change_password,
@@ -131,9 +214,20 @@ def register(
     user_data: UserCreate,
     db: Session = Depends(get_db)
 ):
+    # Prohibit registering as admin through public endpoint
+    requested_role = (user_data.role or "receptionist").strip().lower()
+    if requested_role in ("admin", "superadmin", "administrator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin accounts cannot be registered through public registration. Contact hospital administration."
+        )
+
+    # Allow only valid standard non-admin roles
+    safe_role = requested_role if requested_role in ("receptionist", "doctor", "nurse", "staff") else "receptionist"
+
     existing_user = (
         db.query(User)
-        .filter(User.email == user_data.email)
+        .filter(User.email == user_data.email.strip().lower())
         .first()
     )
 
@@ -144,10 +238,10 @@ def register(
         )
 
     new_user = User(
-        name=user_data.name,
-        email=user_data.email,
+        name=user_data.name.strip(),
+        email=user_data.email.strip().lower(),
         password_hash=hash_password(user_data.password),
-        role=user_data.role
+        role=safe_role
     )
 
     db.add(new_user)
@@ -276,12 +370,86 @@ def update_profile(
         current_user.phone = data.phone.strip()
 
     if data.avatar is not None:
-        current_user.avatar = data.avatar
+        if data.avatar.startswith("data:image/"):
+            try:
+                _, b64data = data.avatar.split(",", 1)
+                img_bytes = base64.b64decode(b64data)
+                new_path = process_and_save_avatar_image(img_bytes)
+                delete_avatar_file(current_user.avatar)
+                current_user.avatar = new_path
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to process avatar image."
+                )
+        elif data.avatar == "" or data.avatar == "null":
+            delete_avatar_file(current_user.avatar)
+            current_user.avatar = None
+        else:
+            current_user.avatar = data.avatar
 
     # Crucial: Ensure role and is_active are never modified from profile update
     db.commit()
     db.refresh(current_user)
 
+    return serialize_user_with_profile(current_user, db)
+
+
+@router.post("/avatar", response_model=UserResponse)
+def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload and save user profile avatar image to disk (WebP format),
+    matching doctor and nurse photo architecture.
+    """
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Avatar image file is required.",
+        )
+
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPG, PNG and WEBP images are allowed.",
+        )
+
+    try:
+        contents = file.file.read()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to read uploaded avatar file.",
+        )
+    finally:
+        file.file.close()
+
+    new_path = process_and_save_avatar_image(contents)
+    delete_avatar_file(current_user.avatar)
+    current_user.avatar = new_path
+
+    db.commit()
+    db.refresh(current_user)
+    return serialize_user_with_profile(current_user, db)
+
+
+@router.delete("/avatar", response_model=UserResponse)
+def remove_avatar(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove current user avatar from disk and database.
+    """
+    delete_avatar_file(current_user.avatar)
+    current_user.avatar = None
+    db.commit()
+    db.refresh(current_user)
     return serialize_user_with_profile(current_user, db)
 
 

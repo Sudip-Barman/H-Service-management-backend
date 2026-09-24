@@ -13,6 +13,8 @@ class NotificationCreate(BaseModel):
     read: bool = False
     recipient_user_id: int | None = None
     recipient_role: str | None = None
+    recipient_mode: str | None = "single"  # single, all_staff, selected
+    recipient_user_ids: list[int] | None = None
     related_entity_type: str | None = None
     related_entity_id: int | None = None
     action_url: str | None = None

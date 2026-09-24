@@ -13,6 +13,8 @@ router = APIRouter(
 
 
 from datetime import date, datetime
+from app.models.reminder_log import ReminderNotificationLog
+from app.utils.datetime_utils import get_current_ist_date
 from app.services.notification_service import (
     advance_recurring_followup,
     create_targeted_notification,
@@ -126,6 +128,17 @@ def create_followup(data: FollowUpCreate, db: Session = Depends(get_db)):
             related_entity_type="followup",
             related_entity_id=fu.id,
             action_url="/admin/follow-up",
+        )
+
+        # Record in persistent ReminderNotificationLog so deleting the notification never recreates it
+        db.add(
+            ReminderNotificationLog(
+                reminder_type="followup",
+                reminder_id=fu.id,
+                occurrence_date=str(scheduled_date_for_this_occurrence),
+                recipient_key="admin",
+                created_at=datetime.utcnow(),
+            )
         )
 
         fu.notification_sent = True

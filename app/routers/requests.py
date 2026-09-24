@@ -141,16 +141,34 @@ def update_request(request_id: str, data: RequestUpdate, db: Session = Depends(g
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(req, field, value)
 
-    # Notify requester if status changed to Approved or Rejected
-    if old_status != req.status and req.status in ["Approved", "Rejected"]:
+    # Notify requester if status changed to Approved, Rejected, or Cancelled
+    if old_status != req.status and req.status in ["Approved", "Rejected", "Cancelled"]:
         requester_user = _resolve_requester_user(req.requested_by, db)
         if requester_user:
-            notif_type = "request_approved" if req.status == "Approved" else "request_rejected"
-            action_url = "/workforce/schedule" if req.request_type.lower() in ["schedule", "leave", "shift"] else "/workforce/dashboard"
+            is_leave = req.request_type and req.request_type.lower() == "leave"
+            if is_leave:
+                action_url = "/workforce/leave"
+                if req.status == "Approved":
+                    title = "Leave Request Approved"
+                    msg = "Your leave request has been approved."
+                    notif_type = "leave_approved"
+                else:
+                    title = f"Leave Request {req.status}"
+                    msg = f"Your leave request has been {req.status.lower()}."
+                    notif_type = f"leave_{req.status.lower()}"
+            else:
+                notif_type = "request_approved" if req.status == "Approved" else "request_rejected"
+                if req.request_type and req.request_type.lower() in ["schedule", "shift"]:
+                    action_url = "/workforce/schedule"
+                else:
+                    action_url = "/workforce/dashboard"
+                title = f"Request {req.status}: {req.item}"
+                msg = f"Your {req.request_type} request for '{req.item}' was {req.status.lower()} by Admin."
+
             create_targeted_notification(
                 db=db,
-                title=f"Request {req.status}: {req.item}",
-                message=f"Your {req.request_type} request for '{req.item}' was {req.status.lower()} by Admin.",
+                title=title,
+                message=msg,
                 recipient_user_id=requester_user.id,
                 recipient_role=requester_user.role,
                 notif_type=notif_type,

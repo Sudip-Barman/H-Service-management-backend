@@ -59,18 +59,18 @@ def get_notifications(
 
         notifications = (
             db.query(Notification)
-            .filter(
-                (Notification.recipient_user_id == current_user.id)
-                | (Notification.recipient_role == "admin")
-                | (Notification.recipient_user_id == None)
-            )
             .order_by(Notification.id.desc())
             .all()
         )
     else:
         notifications = (
             db.query(Notification)
-            .filter(Notification.recipient_user_id == current_user.id)
+            .filter(
+                (Notification.recipient_user_id == current_user.id)
+                | (Notification.recipient_role == current_user.role)
+                | (Notification.recipient_role == "all_staff")
+                | (Notification.recipient_user_id == None)
+            )
             .order_by(Notification.id.desc())
             .all()
         )
@@ -90,14 +90,97 @@ def sync_notifications_reminders(
     return {"status": "success", "synced_count": count}
 
 
-
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_notification(
     data: NotificationCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    notif = Notification(**data.model_dump())
+    # 1. Broadcast to all staff members
+    if data.recipient_mode == "all_staff" or (
+        data.recipient and data.recipient.strip().lower() in ["all staff", "all hospital staff", "all clinical staff"]
+    ):
+        staff_users = db.query(User).filter(
+            User.role.in_(["doctor", "nurse", "staff", "receptionist", "admin"])
+        ).all()
+        created_notifs = []
+        for u in staff_users:
+            notif = Notification(
+                title=data.title,
+                message=data.message,
+                type=data.type,
+                priority=data.priority,
+                department=data.department or "All Departments",
+                recipient=u.name,
+                date=data.date,
+                time=data.time,
+                read=False,
+                recipient_user_id=u.id,
+                recipient_role=u.role,
+                related_entity_type=data.related_entity_type,
+                related_entity_id=data.related_entity_id,
+                action_url=data.action_url,
+            )
+            db.add(notif)
+            created_notifs.append(notif)
+        db.commit()
+        for n in created_notifs:
+            db.refresh(n)
+        return [_format_notification(n) for n in created_notifs]
+
+    # 2. Broadcast to selected staff/users
+    if data.recipient_mode == "selected" and data.recipient_user_ids:
+        users = db.query(User).filter(User.id.in_(data.recipient_user_ids)).all()
+        created_notifs = []
+        for u in users:
+            notif = Notification(
+                title=data.title,
+                message=data.message,
+                type=data.type,
+                priority=data.priority,
+                department=data.department or "All Departments",
+                recipient=u.name,
+                date=data.date,
+                time=data.time,
+                read=False,
+                recipient_user_id=u.id,
+                recipient_role=u.role,
+                related_entity_type=data.related_entity_type,
+                related_entity_id=data.related_entity_id,
+                action_url=data.action_url,
+            )
+            db.add(notif)
+            created_notifs.append(notif)
+        db.commit()
+        for n in created_notifs:
+            db.refresh(n)
+        return [_format_notification(n) for n in created_notifs]
+
+    # 3. Single recipient (targeted user or general)
+    recipient_role = data.recipient_role
+    recipient_name = data.recipient
+    if data.recipient_user_id:
+        u = db.query(User).filter(User.id == data.recipient_user_id).first()
+        if u:
+            recipient_role = u.role
+            recipient_name = u.name
+
+    notif = Notification(
+        title=data.title,
+        message=data.message,
+        type=data.type,
+        priority=data.priority,
+        department=data.department,
+        recipient=recipient_name,
+        date=data.date,
+        time=data.time,
+        read=False,
+        recipient_user_id=data.recipient_user_id,
+        recipient_role=recipient_role,
+        related_entity_type=data.related_entity_type,
+        related_entity_id=data.related_entity_id,
+        action_url=data.action_url,
+    )
     db.add(notif)
     db.commit()
     db.refresh(notif)

@@ -20,6 +20,7 @@ from app.models.notification import Notification
 from app.models.feedback import Feedback
 from app.models.settings import HospitalSetting
 from app.models.asset import HospitalAsset
+from app.models.reminder_log import ReminderNotificationLog
 
 __all__ = [
     "User",
@@ -45,4 +46,5 @@ __all__ = [
     "Feedback",
     "HospitalSetting",
     "HospitalAsset",
+    "ReminderNotificationLog",
 ]

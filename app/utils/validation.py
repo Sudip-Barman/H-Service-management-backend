@@ -79,16 +79,11 @@ def validate_dob(
             min_age = int(settings.get("minPatientAge", settings.get("minAge", 0)))
             max_age = int(settings.get("maxPatientAge", settings.get("maxAge", 125)))
 
-    if age < min_age:
+    if age < min_age or age > max_age:
         if is_staff:
-            raise ValueError(f"Age must be at least {min_age} years.")
+            raise ValueError(f"Staff age must be between {min_age} and {max_age} years.")
         else:
-            raise ValueError(f"Patient age cannot be less than {min_age} years.")
-
-    if age > max_age:
-        if is_staff:
-            raise ValueError(f"Age cannot exceed {max_age} years.")
-        else:
-            raise ValueError(f"Patient age cannot exceed {max_age} years.")
+            raise ValueError(f"Patient age must be between {min_age} and {max_age} years.")
 
     return dob
+

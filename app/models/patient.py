@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, Integer, String, Text
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -169,7 +170,7 @@ class Patient(Base):
     # ------------------------------------------------------------------
 
     digital_signature: Mapped[str | None] = mapped_column(
-        Text,
+        Text().with_variant(LONGTEXT, "mysql"),
         nullable=True,
     )
 

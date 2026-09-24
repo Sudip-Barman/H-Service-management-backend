@@ -8,8 +8,23 @@ from app.models.booking import Booking
 from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.service import Service
+from app.models.settings import HospitalSetting
 from app.models.staff import Staff
 from app.schemas.billing import ManualBillCreate
+
+
+def get_hospital_tax_rate(db: Session) -> float:
+    try:
+        setting = db.query(HospitalSetting).filter(HospitalSetting.key == "billingTaxRate").first()
+        if setting and setting.value:
+            try:
+                val = json.loads(setting.value)
+                return float(val)
+            except Exception:
+                return float(setting.value)
+    except Exception:
+        pass
+    return 5.0
 
 
 def clean_legacy_dummy_bills(db: Session):
@@ -71,18 +86,27 @@ def generate_bill_for_booking(booking: Booking, db: Session) -> Bill:
 
     service_name = service.name if service else (booking.booking_category or "Hospital Service")
     service_id = service.id if service else booking.service_id
-    department = service.category if service else "General Services"
 
-    # Determine amount
+    # Determine department (HomeCare for home visit bookings, otherwise service category)
+    is_home_care = (
+        (booking.service_location_type and "home" in booking.service_location_type.lower()) or
+        (booking.booking_type and "home" in booking.booking_type.lower()) or
+        (booking.booking_category and "home" in booking.booking_category.lower()) or
+        (service and "home" in (service.category or "").lower())
+    )
+    department = "HomeCare" if is_home_care else (service.category if service else (booking.booking_category or "General Services"))
+
+    # Determine amount & tax using hospital setting
     total_fee = float(booking.total_fee if booking.total_fee is not None and float(booking.total_fee) > 0 else (booking.consultation_fee if booking.consultation_fee else (service.price if service else 500.0)))
-    tax = round(total_fee * 0.05, 2)
+    tax_rate = get_hospital_tax_rate(db)
+    tax = round(total_fee * (tax_rate / 100.0), 2)
     subtotal = round(total_fee - tax, 2) if total_fee >= tax else total_fee
 
     payment_status = booking.payment_status or "Pending"
     paid_amount = total_fee if payment_status.lower() == "paid" else 0.0
 
-    # Resolve Staff / Doctor name
-    doctor_name = "Hospital Medical Team"
+    # Resolve Staff / Doctor name (Do not assign doctor when no doctor was assigned in booking)
+    doctor_name = ""
     if booking.doctor_id:
         doc = db.query(Doctor).filter(Doctor.id == booking.doctor_id).first()
         if doc:
@@ -256,7 +280,8 @@ def generate_bill_for_patient(patient: Patient, db: Session) -> Bill:
             "discount": 0,
         })
 
-    tax = round(total_fee * 0.05, 2)
+    tax_rate = get_hospital_tax_rate(db)
+    tax = round(total_fee * (tax_rate / 100.0), 2)
     subtotal = round(total_fee - tax, 2) if total_fee >= tax else total_fee
 
     patient_full_name = f"{patient.first_name} {patient.last_name or ''}".strip()

@@ -44,7 +44,10 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 ALLOWED_CONTENT_TYPES = {
     "image/jpeg",
+    "image/jpg",
+    "image/pjpeg",
     "image/png",
+    "image/x-png",
     "image/webp",
 }
 
@@ -469,6 +472,7 @@ def update_doctor(
     available_status: str | None = Form(None),
     status: str | None = Form(None),
     photo: UploadFile | None = File(None),
+    remove_photo: bool = Form(False),
     username: str | None = Form(None),
     temporary_password: str | None = Form(None),
     db: Session = Depends(get_db),
@@ -612,6 +616,12 @@ def update_doctor(
     if photo:
         new_photo = save_doctor_photo(photo)
         doctor.photo = new_photo
+        if old_photo:
+            delete_doctor_photo(old_photo)
+    elif remove_photo:
+        doctor.photo = None
+        if old_photo:
+            delete_doctor_photo(old_photo)
 
     # ------------------------------------------------------------------------
     # Commit

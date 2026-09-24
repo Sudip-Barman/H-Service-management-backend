@@ -2,6 +2,7 @@ from datetime import datetime
 
 from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -45,7 +46,7 @@ class User(Base):
     )
 
     avatar: Mapped[str | None] = mapped_column(
-        Text,
+        Text().with_variant(LONGTEXT, "mysql"),
         nullable=True
     )
 

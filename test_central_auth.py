@@ -17,6 +17,9 @@ import urllib.request
 import urllib.error
 from app.database import SessionLocal
 from app.models.user import User
+from app.models.doctor import Doctor
+from app.models.nurse import Nurse
+from app.models.staff import Staff
 from app.core.security import hash_password, create_access_token
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -82,6 +85,19 @@ def run_tests():
             doc_user.password_hash = hash_password("TempPass@123")
             doc_user.must_change_password = True
             doc_user.is_active = True
+            doc_rec = db.query(Doctor).filter(Doctor.user_id == doc_user.id).first()
+            if not doc_rec:
+                doc_rec = Doctor(
+                    user_id=doc_user.id,
+                    registration_number="REG-DOC-TEST",
+                    first_name=doc_user.name.split()[0] if doc_user.name else "Doctor",
+                    last_name="Test",
+                    phone="9876543210",
+                    email=doc_user.email,
+                    specialization="Cardiology",
+                    department="Cardiology"
+                )
+                db.add(doc_rec)
             db.commit()
 
         nurse_user = db.query(User).filter(User.username == "nurse_moumita").first()
@@ -91,6 +107,19 @@ def run_tests():
             nurse_user.password_hash = hash_password("TempPass@123")
             nurse_user.must_change_password = True
             nurse_user.is_active = True
+            nurse_rec = db.query(Nurse).filter(Nurse.user_id == nurse_user.id).first()
+            if not nurse_rec:
+                nurse_rec = Nurse(
+                    user_id=nurse_user.id,
+                    staff_id=101,
+                    registration_number="REG-NUR-TEST",
+                    first_name=nurse_user.name.split()[0] if nurse_user.name else "Nurse",
+                    last_name="Test",
+                    phone="9876543211",
+                    email=nurse_user.email,
+                    department="ICU"
+                )
+                db.add(nurse_rec)
             db.commit()
 
         staff_user = db.query(User).filter(User.username == "staff_amit_sharma").first()
@@ -100,6 +129,18 @@ def run_tests():
             staff_user.password_hash = hash_password("TempPass@123")
             staff_user.must_change_password = True
             staff_user.is_active = True
+            staff_rec = db.query(Staff).filter(Staff.user_id == staff_user.id).first()
+            if not staff_rec:
+                staff_rec = Staff(
+                    user_id=staff_user.id,
+                    name=staff_user.name or "Staff Member",
+                    role="Receptionist",
+                    gender="Male",
+                    phone="9876543212",
+                    email=staff_user.email,
+                    qualification="B.Com"
+                )
+                db.add(staff_rec)
             db.commit()
 
         # -------------------------------------------------------------

@@ -1,9 +1,12 @@
+import calendar
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.followup import FollowUp
 from app.models.notification import Notification
+from app.models.reminder_log import ReminderNotificationLog
 from app.models.user import User
+from app.utils.datetime_utils import get_current_ist_date
 
 
 def create_targeted_notification(
@@ -111,25 +114,39 @@ def create_system_notification(
     )
 
 
+def add_calendar_months(orig_date: date, months: int = 1) -> date:
+    """
+    Safely adds calendar months to a date, clamping day to end of month
+    (e.g., Jan 31 + 1 month -> Feb 28 or 29).
+    """
+    year = orig_date.year + (orig_date.month + months - 1) // 12
+    month = (orig_date.month + months - 1) % 12 + 1
+    max_day = calendar.monthrange(year, month)[1]
+    day = min(orig_date.day, max_day)
+    return date(year, month, day)
+
+
 def advance_recurring_followup(fu: FollowUp, base_date: date | None = None) -> date | None:
     """
     Advances a recurring follow-up to its next scheduled occurrence date.
     Returns the next date, or None if recurrence has expired.
+    Uses calendar-month logic for monthly recurrence.
     """
     if not fu.is_recurring:
         return None
 
+    today = get_current_ist_date()
     interval = (fu.recurrence_interval or "Daily").strip().capitalize()
-    ref = base_date or fu.follow_up_date or date.today()
-    if ref < date.today():
-        ref = date.today()
+    ref = base_date or fu.follow_up_date or today
+    if ref < today:
+        ref = today
 
     if interval == "Daily":
         next_date = ref + timedelta(days=1)
     elif interval == "Weekly":
         next_date = ref + timedelta(weeks=1)
     elif interval == "Monthly":
-        next_date = ref + timedelta(days=30)
+        next_date = add_calendar_months(ref, 1)
     else:
         next_date = ref + timedelta(days=1)
 
@@ -145,11 +162,11 @@ def advance_recurring_followup(fu: FollowUp, base_date: date | None = None) -> d
 def sync_followup_reminders(db: Session) -> int:
     """
     Checks for any pending/active follow-ups whose follow_up_date is today or earlier,
-    and creates a reminder notification if one has not already been created for today.
-    Uses persistent database tracking on FollowUp (notification_sent, last_notification_date, triggered_at).
-    Deleting or dismissing a notification will NEVER recreate it.
+    and creates a reminder notification if one has not already been created for that occurrence.
+    Uses persistent database tracking in ReminderNotificationLog (reminder_type, reminder_id, occurrence_date, recipient_key).
+    Deleting or dismissing a notification will NEVER cause that occurrence to be regenerated.
     """
-    today = date.today()
+    today = get_current_ist_date()
     now = datetime.utcnow()
 
     # Query only active follow-ups due today or earlier that have NOT yet been notified for their current scheduled date
@@ -169,6 +186,26 @@ def sync_followup_reminders(db: Session) -> int:
 
     created_count = 0
     for fu in active_followups:
+        scheduled_date_str = str(fu.follow_up_date)
+
+        # Check persistent ReminderNotificationLog: if this exact occurrence was already notified, NEVER re-notify!
+        already_logged = (
+            db.query(ReminderNotificationLog)
+            .filter(
+                ReminderNotificationLog.reminder_type == "followup",
+                ReminderNotificationLog.reminder_id == fu.id,
+                ReminderNotificationLog.occurrence_date == scheduled_date_str,
+                ReminderNotificationLog.recipient_key == "admin",
+            )
+            .first()
+        )
+        if already_logged:
+            fu.notification_sent = True
+            fu.last_notification_date = fu.follow_up_date
+            if fu.is_recurring and fu.follow_up_date <= today:
+                advance_recurring_followup(fu, base_date=fu.follow_up_date)
+            continue
+
         # Extra safety check: if already triggered for this specific follow_up_date, skip
         if fu.notification_sent and fu.last_notification_date == fu.follow_up_date:
             continue
@@ -192,12 +229,22 @@ def sync_followup_reminders(db: Session) -> int:
             action_url="/admin/follow-up",
         )
 
+        # Record in persistent ReminderNotificationLog so deleting the notification never recreates it
+        log_entry = ReminderNotificationLog(
+            reminder_type="followup",
+            reminder_id=fu.id,
+            occurrence_date=scheduled_date_str,
+            recipient_key="admin",
+            created_at=now,
+        )
+        db.add(log_entry)
+
         # Mark persistently as triggered for this scheduled occurrence
         fu.notification_sent = True
         fu.last_notification_date = scheduled_date_for_this_occurrence
         fu.triggered_at = now
 
-        # If recurring, advance to next occurrence date
+        # If recurring, advance to next occurrence date (treated as separate future occurrence)
         if fu.is_recurring:
             advance_recurring_followup(fu, base_date=scheduled_date_for_this_occurrence)
 
@@ -207,4 +254,5 @@ def sync_followup_reminders(db: Session) -> int:
         db.commit()
 
     return created_count
+
 

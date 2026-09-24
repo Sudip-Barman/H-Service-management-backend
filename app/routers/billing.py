@@ -53,7 +53,8 @@ def _format_bill(b: Bill) -> dict:
         "serviceName": service_name,
         "serviceId": service_id,
         "description": b.description or service_name,
-        "department": "HomeCare",
+        "doctor": b.doctor or "",
+        "department": b.department or "General",
         "visitDate": str(b.date),
         "date": str(b.date),
         "subtotal": subtotal,
@@ -148,17 +149,22 @@ def update_bill(bill_id: str, data: BillUpdate, db: Session = Depends(get_db)):
     db.commit()
 
     # Sync booking payment_status if this bill is linked to a booking
+    booking = None
     booking_id = getattr(bill, "booking_id", None)
     if booking_id:
         booking = db.query(Booking).filter(Booking.booking_id == booking_id).first()
-        if booking:
-            if total > 0 and paid >= (total - 0.01):
-                booking.payment_status = "Paid"
-            elif paid > 0:
-                booking.payment_status = "Partial"
-            else:
-                booking.payment_status = "Pending"
-            db.commit()
+    if not booking and bill.invoice_number and bill.invoice_number.startswith("INV-"):
+        b_num = bill.invoice_number.replace("INV-", "")
+        booking = db.query(Booking).filter(Booking.booking_number == b_num).first()
+
+    if booking:
+        if total > 0 and paid >= (total - 0.01):
+            booking.payment_status = "Paid"
+        elif paid > 0:
+            booking.payment_status = "Partial"
+        else:
+            booking.payment_status = "Pending"
+        db.commit()
 
     db.refresh(bill)
     return _format_bill(bill)

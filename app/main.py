@@ -5,6 +5,7 @@ from app.database import Base, engine
 import app.models
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.routers.auth import router as auth_router
 from app.routers.test_auth import router as test_auth_router
 from app.routers.users import router as users_router
@@ -49,12 +50,20 @@ app = FastAPI(
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 UPLOADS_DIR = BASE_DIR / "uploads"
+FRONTEND_DIST_DIR = BASE_DIR.parent / "frontend" / "dist"
 
 app.mount(
     "/uploads",
     StaticFiles(directory=UPLOADS_DIR),
     name="uploads",
 )
+
+if (FRONTEND_DIST_DIR / "assets").is_dir():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=FRONTEND_DIST_DIR / "assets"),
+        name="frontend_assets",
+    )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -66,6 +75,8 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "http://127.0.0.1:5175",
         "http://127.0.0.1:3000",
+        "http://sonrisehospital.learninghub.ind.in",
+        "https://sonrisehospital.learninghub.ind.in"
     ],
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
@@ -103,6 +114,9 @@ app.include_router(assets_router)
 
 @app.get("/")
 def root():
+    index_path = FRONTEND_DIST_DIR / "index.html"
+    if index_path.is_file():
+        return FileResponse(index_path)
     return {
         "message": "Hospital Management System API is running"
     }
@@ -113,4 +127,17 @@ def health_check():
     return {
         "status": "healthy",
         "database": "connected"
+    }
+
+
+@app.get("/{full_path:path}")
+def catch_all_frontend(full_path: str):
+    file_path = FRONTEND_DIST_DIR / full_path
+    if full_path and file_path.is_file():
+        return FileResponse(file_path)
+    index_path = FRONTEND_DIST_DIR / "index.html"
+    if index_path.is_file():
+        return FileResponse(index_path)
+    return {
+        "message": "Hospital Management System API is running"
     }
